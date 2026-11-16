@@ -30,13 +30,14 @@ artifacts without publishing. It can run after the branch is pushed by an operat
 
 - [Architecture and security boundaries](docs/architecture.md)
 - [Build, sign and distribute releases](docs/releases.md)
+- [SQL Troubleshooting: EN/BG diagnostics and Windows VM checks](docs/sql-troubleshooting.md)
 - [Recovery and operational limits](docs/recovery.md)
 - [Acceptance checklist and local evidence](docs/review.md)
 - [Project maintenance skill](skills/muonline-manager/SKILL.md)
 
 Production release signing requires an operator-owned Ed25519 key, its public key
-pinned in `build/trust.json`, and actual published artifacts. The supplied empty
-trust store blocks deployment. No R2 objects are assumed to exist or uploaded by CI.
+pinned in `build/trust.json`, and actual published artifacts. An empty trust store
+blocks deployment; keep the pinned public key matched to the release signing key. No R2 objects are assumed to exist or uploaded by CI.
 
 Support development: [Buy Me a Coffee](https://buymeacoffee.com/interweb.bg) ·
 [Ko-fi](https://ko-fi.com/interwebltd) · [PayPal](https://paypal.me/interwebltd).

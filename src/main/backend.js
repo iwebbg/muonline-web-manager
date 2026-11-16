@@ -4,6 +4,7 @@ import os from 'node:os';
 import { execute, launchDetached } from './process.js';
 import { DEFAULT_CDN, DEFAULT_CHANNEL, DEFAULT_REPOSITORY, MANAGER_VERSION, checkRelease, discoverWebRelease, downloadRelease, newer } from './releases.js';
 
+import { SqlTroubleshooter } from './sql-troubleshooting.js';
 import { languages, resolveLocale } from '../shared/i18n.js';
 
 const DISTRIBUTION = 'Ubuntu-24.04';
@@ -21,6 +22,8 @@ export class Backend {
     this.webRelease = null;
     this.managerRelease = null;
     this.busy = false;
+    this.sql = new SqlTroubleshooter(resources, userData);
+    this.sqlReport = null;
   }
 
   /** Read public feed settings without storing SQL or administrator credentials. */
@@ -237,6 +240,34 @@ export class Backend {
     this.busy = true;
     try {
       switch (action) {
+        case 'sqlInspect':
+          this.requireWindows();
+          return await this.sql.inspect();
+        case 'sqlDiagnose':
+          this.requireWindows();
+          this.sqlReport = await this.sql.diagnose(input);
+          return this.sqlReport;
+        case 'sqlPlan':
+          this.requireWindows();
+          return await this.sql.plan(input);
+        case 'sqlApply': {
+          this.requireWindows();
+          this.sqlReport = null;
+          const result = await this.sql.apply(input);
+          return result;
+        }
+        case 'sqlCopyReport':
+          if (!this.sqlReport) {
+            throw new Error('Run SQL troubleshooting before copying a report.');
+          }
+          return this.sqlReport;
+        case 'sqlCopyPlan': {
+          const stored = this.sql.plans.get(input.planId);
+          if (!stored || stored.public.expiresAt < Date.now()) {
+            throw new Error('SQL change needs a current preview and explicit confirmation.');
+          }
+          return stored.public.command;
+        }
         case 'settings':
           return { ...this.settings, language: this.language, managerVersion: MANAGER_VERSION, trustedKeys: Object.keys(this.trust.keys) };
         case 'setLanguage':

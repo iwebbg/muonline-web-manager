@@ -105,8 +105,8 @@ in memory and does not persist credentials or invoke a deployment operation.
 Application text lives in `src/shared/locales/{en,bg}.js`; known operational messages
 are translated at the presentation boundary in `src/shared/messages.js`, preserving
 recovery paths and technical identifiers. Native Electron menus/dialogs use the same
-language. SQL diagnostic output, process logs and unknown third-party errors retain
-their original text. Browser form validation messages are localized as well.
+language. SQL diagnostic reasons/actions/statuses are localized from typed results; measured
+technical evidence, process logs and unknown third-party errors retain their original text. Browser form validation messages are localized as well.
 
 NSIS provides a separate English/Bulgarian installer language selector. Custom
 welcome/support pages and missing upstream Bulgarian installer messages are translated
@@ -128,3 +128,18 @@ success. The renderer refreshes status and availability after installation/updat
 The Updates screen has a notification and version summary; source prefixes/key names
 are not part of normal user setup. Manager updates continue to use their independent
 signed feed. CDN override is retained under advanced settings.
+
+## SQL Troubleshooting boundary
+
+[SQL Troubleshooting](sql-troubleshooting.md) uses a dedicated packaged read-only
+Python helper and PDO probe, coordinated with Windows inventory in the main process.
+It does not dispatch arbitrary worker operations. Six narrow IPC methods expose
+instance inventory, diagnosis, preview, confirmed apply and server-owned report/command
+copying. The clipboard endpoint cannot copy arbitrary renderer-provided data.
+
+The existing worker remains responsible for deployment and database changes. Diagnostic
+containers bypass its bootstrap entrypoint, inspect independent connections, and do not
+create databases. Windows changes use expiring main-owned plans, fresh measurement,
+explicit confirmation and UAC. Their limited elevated helper re-resolves the selected
+instance and never receives SQL passwords. See the module documentation for firewall
+scope restrictions, metadata visibility and real-Windows validation limits.

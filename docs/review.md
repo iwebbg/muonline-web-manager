@@ -138,3 +138,21 @@ with refreshed version/notification, and a blocked pending 1.5.0. Real read-only
 discovery also verified public tag v1.3.0 and its CDN manifest/signature with the pinned
 key; ZIP download/application was not performed by that check. Full Windows behavior
 still needs the VM checklist in [windows-vm.md](windows-vm.md).
+
+## SQL Troubleshooting follow-up — 2026-11-17
+
+The new seventh page supports EN/BG causes, actions, statuses, previews and reports.
+It separates Windows instance/authentication/TCP/listener facts, measured WSL mode and
+routes, Docker TCP/PDO, TLS, application/game/optional databases and runtime/bootstrap
+permissions. System changes require a preview, explicit confirmation and Windows UAC.
+
+Verification: 36 Node and 24 Python tests passed; all seven Electron pages passed the
+EN/BG smoke test, including SQL report rendering, password clearing and confirmation.
+Real isolated SQL Server 2022 + PDO/sqlsrv checks passed for successful app connection,
+failed game login, bootstrap fallback, denied/missing database, certificate trust error
+and no database creation. Production PowerShell functions ran with mocked OS cmdlets
+and protected broad scopes, foreign PIDs and duplicate manual/manager firewall rules.
+No actual Windows service, registry, UAC or firewall operation was exercised locally.
+Follow [the SQL module VM checklist](sql-troubleshooting.md#windows-vm-acceptance)
+before approving Windows behavior. Legacy crypto patterns were tested, not an actual
+SQL 2008 R2 handshake. No adapters or sibling Laravel files were changed.

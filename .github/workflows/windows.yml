@@ -23,6 +23,8 @@ jobs:
       - run: npm run test:node
       - run: npm run test:python
       - run: npm run test:ui
+      - name: SQL PowerShell contracts with mocked OS cmdlets
+        run: powershell -NoProfile -NonInteractive -File tests/windows-sql-contract.ps1
       - name: Pin release trust keys when configured
         shell: pwsh
         env:

@@ -1,5 +1,6 @@
 import { resolveLocale, translate } from '../shared/i18n.js';
 import { translateMessage } from '../shared/messages.js';
+import { sqlPage, populateSql, bindSql, sqlInput } from './sql/view.js';
 
 const content = document.querySelector('#content');
 const output = document.querySelector('#output');
@@ -8,6 +9,7 @@ let busy = false;
 let settings = {};
 let feeds = {};
 let status = null;
+const sqlState = { inventory: null, report: null, plan: null, fields: {}, installed: false };
 let language = resolveLocale(navigator.language);
 let lastOutput = { kind: 'welcome' };
 let lastAction = '';
@@ -34,7 +36,7 @@ function translateShell() {
 
 /** Present operation names without translating the underlying IPC identifiers. */
 function actionLabel(action) {
-  const names = { status: 'checkStatus', admin: 'createAdmin', backup: 'createBackup', update: 'updateWeb', updates: 'checkUpdates', access: 'applyAccess', settings: 'settingsTitle' };
+  const names = { sqlInspect: 'sql.inspect', sqlDiagnose: 'sql.run', sqlPlan: 'sql.preview', sqlApply: 'sql.apply', sqlCopyReport: 'sql.copyReport', sqlCopyPlan: 'sql.copyCommand', status: 'checkStatus', admin: 'createAdmin', backup: 'createBackup', update: 'updateWeb', updates: 'checkUpdates', access: 'applyAccess', settings: 'settingsTitle' };
   return t(names[action] ?? action);
 }
 
@@ -43,11 +45,25 @@ function renderOutput() {
   if (lastOutput.kind === 'welcome') {
     output.textContent = t('welcome');
   } else if (lastOutput.kind === 'working') {
-    output.textContent = t('working', { action: actionLabel(lastOutput.action) });
+    const sqlWorking = { sqlInspect: 'sql.working', sqlDiagnose: 'sql.working', sqlPlan: 'sql.preparing', sqlApply: 'sql.applying', sqlCopyReport: 'sql.copying', sqlCopyPlan: 'sql.copying' };
+    output.textContent = sqlWorking[lastOutput.action] ? t(sqlWorking[lastOutput.action]) : t('working', { action: actionLabel(lastOutput.action) });
   } else if (lastOutput.kind === 'error') {
     output.textContent = translateMessage(language, lastOutput.message);
   } else {
     const value = lastOutput.value;
+    const sqlSummary = { sqlInspect: 'sql.inventoryReady', sqlDiagnose: 'sql.reportReady', sqlPlan: 'sql.planReady' };
+    if (sqlSummary[lastOutput.action]) {
+      output.textContent = t(sqlSummary[lastOutput.action]);
+      return;
+    }
+    if (['sqlCopyReport', 'sqlCopyPlan'].includes(lastOutput.action) && value?.copied) {
+      output.textContent = t('sql.copied');
+      return;
+    }
+    if (lastOutput.action === 'sqlApply') {
+      output.textContent = t('sql.result.' + value.reason);
+      return;
+    }
     output.textContent = typeof value === 'string'
       ? (lastOutput.action === 'logs' ? value : translateMessage(language, value))
       : JSON.stringify(value, (key, item) => key === 'error' || key === 'runtimeError' ? translateMessage(language, item) : item, 2);
@@ -91,8 +107,9 @@ function render() {
   translateShell();
   document.querySelectorAll('[data-page]').forEach(button => button.classList.toggle('selected', button.dataset.page === page));
   const pages = {
+    sql: sqlPage(t),
     overview: `<h1>${t('overviewTitle')}</h1><p class="lead">${t('overviewLead')}</p><div class="cards"><div class="card"><small>${t('webApplicationLabel')}</small><strong id="webVersion">${t('unchecked')}</strong><p>${t('webVersionHint')}</p></div><div class="card"><small>${t('accessLabel')}</small><strong id="accessMode">${t('unchecked')}</strong><p id="siteUrl">localhost / IP / Domain + SSL</p></div><div class="card"><small>${t('managerLabel')}</small><strong id="managerVersion">0.1.0</strong><p>Electron · WSL2 · Docker Engine</p></div></div><div class="panel"><h2>${t('servicesTitle')}</h2><div id="statusDetail" class="status-detail">${t('noRuntimeStatus')}</div><div class="actions"><button data-action="status">${t('checkStatus')}</button><button data-action="start" class="primary">${t('start')}</button><button data-action="stop">${t('stop')}</button><button data-action="restart">${t('restart')}</button><button data-action="logs">${t('logs')}</button><button data-action="doctor">${t('doctor')}</button></div></div><div class="hint">${t('lifecycleBefore')}<code>wsl --shutdown</code>${t('lifecycleAfter')}</div>`,
-    install: `<h1>${t('installTitle')}</h1><p class="lead">${t('installLead')}</p><div class="actions"><button data-action="prerequisites">${t('prerequisites')}</button><button data-action="installWsl">${t('installWsl')}</button><button data-action="installDocker">${t('installDocker')}</button></div><div class="warning">${t('dockerWarning')}</div><p id="installRelease" class="hint"></p><form id="installForm"><h2>${t('sqlTitle')}</h2><div class="grid"><label>${t('sqlHost')}<input name="sqlHost" required placeholder="192.168.1.10"></label><label>${t('sqlPort')}<input name="sqlPort" type="number" min="1" max="65535" value="1433" required></label><label>${t('sqlAdmin')}<input name="sqlAdmin" value="sa" required autocomplete="off"></label><label>${t('sqlPassword')}<input name="sqlPassword" type="password" required autocomplete="off"></label><label>${t('profile')}<select name="profile" id="profiles" required></select></label><label>${t('appEnv')}<select name="appEnv"><option value="local">local</option><option value="production">production</option></select></label><label>${t('gameDatabase')}<input name="gameDatabase" value="MuOnline" required></label><label>${t('webDatabase')}<input name="webDatabase" value="MuOnline_Web" required></label><label>${t('appLogin')}<input name="appLogin" value="muonline_web_app" required></label><label>${t('gameLogin')}<input name="gameLogin" value="muonline_web_user" required></label></div><label class="check"><input name="trustCertificate" type="checkbox">${t('trustCertificate')}</label><p class="hint">${t('passwordHint')}</p><fieldset><legend>${t('access')}</legend>${accessFields()}</fieldset><fieldset><legend>${t('firstAdmin')}</legend>${adminFields()}</fieldset><div class="actions"><button class="primary" type="submit">${t('install')}</button><button type="button" id="resumeInstall">${t('resumeInstall')}</button></div><p class="hint">${t('resumeHint')}</p></form>`,
+    install: `<h1>${t('installTitle')}</h1><p class="lead">${t('installLead')}</p><div class="actions"><button data-action="prerequisites">${t('prerequisites')}</button><button data-action="installWsl">${t('installWsl')}</button><button data-action="installDocker">${t('installDocker')}</button><button type="button" id="openSqlTroubleshooting">${t('sql.title')}</button></div><div class="warning">${t('dockerWarning')}</div><p id="installRelease" class="hint"></p><form id="installForm"><h2>${t('sqlTitle')}</h2><div class="grid"><label>${t('sqlHost')}<input name="sqlHost" required placeholder="192.168.1.10"></label><label>${t('sqlPort')}<input name="sqlPort" type="number" min="1" max="65535" value="1433" required></label><label>${t('sqlAdmin')}<input name="sqlAdmin" value="sa" required autocomplete="off"></label><label>${t('sqlPassword')}<input name="sqlPassword" type="password" required autocomplete="off"></label><label>${t('profile')}<select name="profile" id="profiles" required></select></label><label>${t('appEnv')}<select name="appEnv"><option value="local">local</option><option value="production">production</option></select></label><label>${t('gameDatabase')}<input name="gameDatabase" value="MuOnline" required></label><label>${t('webDatabase')}<input name="webDatabase" value="MuOnline_Web" required></label><label>${t('appLogin')}<input name="appLogin" value="muonline_web_app" required></label><label>${t('gameLogin')}<input name="gameLogin" value="muonline_web_user" required></label></div><label class="check"><input name="trustCertificate" type="checkbox">${t('trustCertificate')}</label><p class="hint">${t('passwordHint')}</p><fieldset><legend>${t('access')}</legend>${accessFields()}</fieldset><fieldset><legend>${t('firstAdmin')}</legend>${adminFields()}</fieldset><div class="actions"><button class="primary" type="submit">${t('install')}</button><button type="button" id="resumeInstall">${t('resumeInstall')}</button></div><p class="hint">${t('resumeHint')}</p></form>`,
     access: `<h1>${t('accessTitle')}</h1><p class="lead">${t('accessLead')}</p><form id="accessForm">${accessFields()}<div class="warning">${t('accessWarning')}</div><button class="primary" type="submit">${t('applyAccess')}</button></form>`,
     admins: `<h1>${t('adminsTitle')}</h1><p class="lead">${t('adminsLeadBefore')}<code>admin:create</code>${t('adminsLeadAfter')}</p><form id="adminForm">${adminFields()}<button class="primary" type="submit">${t('createAdmin')}</button></form><p class="hint">${t('adminsHint')}</p>`,
     backup: `<h1>${t('backupTitle')}</h1><p class="lead">${t('backupLead')}</p><form id="backupForm">${backupFields()}<button class="primary" type="submit">${t('createBackup')}</button></form><p class="hint">${t('backupHint')}</p>`,
@@ -125,6 +142,9 @@ function releaseDescription(feed, kind) {
 
 /** Populate dynamic values using text/value properties, never release-supplied HTML. */
 function populate(fillSettings = false) {
+  if (page === 'sql') {
+    populateSql(t, sqlState, perform, fillSettings);
+  }
   const notice = document.querySelector('#updateNotice');
   notice.hidden = !(feeds.web?.available || feeds.web?.newTag || feeds.manager?.available);
   notice.textContent = feeds.web?.newTag && !feeds.web.ready && !feeds.manager?.available
@@ -221,6 +241,21 @@ async function perform(action, input = {}, quiet = false) {
       throw new Error(response.error);
     }
     const result = response.result;
+    if (action === 'sqlInspect') {
+      sqlState.inventory = result;
+      sqlState.plan = null;
+    }
+    if (action === 'sqlDiagnose') {
+      sqlState.report = result;
+      sqlState.plan = null;
+    }
+    if (action === 'sqlPlan') {
+      sqlState.plan = result;
+    }
+    if (action === 'sqlApply') {
+      sqlState.plan = null;
+      sqlState.report = null;
+    }
     if (action === 'settings') {
       settings = result;
       changeLanguage(settings.language ?? language);
@@ -235,6 +270,7 @@ async function perform(action, input = {}, quiet = false) {
     }
     if (action === 'status') {
       status = result;
+      sqlState.installed = result?.installed === true;
       populate();
     }
     if (action === 'saveSettings') {
@@ -246,12 +282,16 @@ async function perform(action, input = {}, quiet = false) {
       renderOutput();
     }
   } catch (error) {
+    if (action === 'sqlApply') {
+      sqlState.plan = null;
+      sqlState.report = null;
+    }
     if (!quiet || action === 'setLanguage') {
       lastOutput = { kind: 'error', message: error.message };
       renderOutput();
     }
   } finally {
-    if (['install', 'resumeInstall', 'admin', 'backup', 'update'].includes(action)) {
+    if (['install', 'resumeInstall', 'admin', 'backup', 'update', 'sqlDiagnose'].includes(action)) {
       document.querySelectorAll('input[type="password"]').forEach(input => { input.value = ''; });
     }
     busy = false;
@@ -285,6 +325,16 @@ function localizeValidation(field) {
 
 /** Bind only the static forms and fixed action names rendered on the current page. */
 function bind() {
+  if (page === 'sql') {
+    bindSql(t, sqlState, perform);
+  }
+  content.querySelector('#openSqlTroubleshooting')?.addEventListener('click', () => {
+    const data = new FormData(content.querySelector('#installForm'));
+    sqlState.fields = { host: data.get('sqlHost'), port: data.get('sqlPort'), applicationDatabase: data.get('webDatabase'), gameDatabase: data.get('gameDatabase'), appUsername: data.get('appLogin'), gameUsername: data.get('gameLogin'), adminUsername: data.get('sqlAdmin') };
+    page = 'sql';
+    render();
+    perform('sqlInspect', {}, true);
+  });
   content.querySelectorAll('input, select').forEach(field => {
     field.addEventListener('invalid', () => localizeValidation(field));
     field.addEventListener('input', () => field.setCustomValidity(''));
@@ -301,6 +351,9 @@ function bind() {
     event.preventDefault();
     const data = new FormData(event.target);
     switch (event.target.id) {
+      case 'sqlForm':
+        perform('sqlDiagnose', sqlInput());
+        break;
       case 'installForm': {
         const values = Object.fromEntries(data.entries());
         values.trustCertificate = data.has('trustCertificate');
@@ -345,6 +398,9 @@ document.querySelectorAll('[data-page]').forEach(button => {
   button.addEventListener('click', () => {
     page = button.dataset.page;
     render();
+    if (page === 'sql' && !sqlState.inventory) {
+      perform('sqlInspect', {}, true);
+    }
   });
 });
 document.querySelectorAll('footer a').forEach(link => {

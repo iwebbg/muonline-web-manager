@@ -39,6 +39,12 @@ async function smoke() {
     }
     const results = {
       setLanguage: { language },
+      sqlInspect: { selectedInstance: 'SQLEXPRESS', instances: [{ name: 'SQLEXPRESS', state: 'Running', version: '15.0.1', tcp: { listenAll: true, sections: [{ name: 'IPAll', port: '1433', dynamicPort: '' }] } }] },
+      sqlDiagnose: { schema: 1, createdAt: '2026-11-17T10:00:00Z', steps: [{ id: 'docker.game.sql', status: 'failed', category: 'authentication', reason: 'loginRejected', action: 'loginRejected', evidence: { database: 'MuOnline', nativeCode: 18456 } }] },
+      sqlPlan: { id: 'test-sql-plan', instance: 'SQLEXPRESS', port: 1433, command: "Restart-Service -Name 'MSSQL$SQLEXPRESS'", disconnectsSessions: true, changes: [] },
+      sqlApply: { applied: true, changed: true, reason: 'serviceRestarted' },
+      sqlCopyReport: { copied: true },
+      sqlCopyPlan: { copied: true },
       settings: { cdn: 'https://cdn.interweb.bg', webChannel: 'muonline-web/releases/v1.3.0', managerChannel: 'muonline-web/manager/stable', trustedKeys: [], language },
       updates: { web: pending ? { latestVersion: '1.5.0', newTag: true, installedVersion, installationKnown: true, error: 'Release is not ready.', ready: false, available: false } : { version: '1.4.0', latestVersion: '1.4.0', installedVersion, installationKnown: true, ready: true, available: installedVersion !== '1.4.0', profiles: ['registry_profile'] }, manager: { error: 'Not published' } },
       status: { installed: true, phase: 'ready', version: installedVersion, access: { mode: 'local', url: 'http://localhost' } }
@@ -53,7 +59,7 @@ async function smoke() {
   await fs.mkdir('artifacts/review', { recursive: true });
   for (const locale of ['en', 'bg']) {
     await selectLanguage(locale);
-    for (const page of ['overview', 'install', 'access', 'admins', 'backup', 'updates']) {
+    for (const page of ['overview', 'install', 'access', 'admins', 'sql', 'backup', 'updates']) {
       await window.webContents.executeJavaScript(`document.querySelector('[data-page="${page}"]').click()`);
       const state = await window.webContents.executeJavaScript(`({ links: [...document.querySelectorAll('footer a')].map(a => a.href), bottom: document.querySelector('footer').getBoundingClientRect().bottom, height: innerHeight, heading: document.querySelector('h1').textContent, body: document.querySelector('#content').textContent, lang: document.documentElement.lang })`);
       assert.equal(state.links.length, 3);
@@ -61,6 +67,10 @@ async function smoke() {
       assert.ok(state.heading.length > 0);
       assert.equal(state.lang, locale);
       assert.equal(/[А-Яа-я]/.test(state.body), locale === 'bg', 'Page should be fully translated: ' + page);
+      if (page === 'sql') {
+        await window.webContents.executeJavaScript(`new Promise(resolve => { const timer=setInterval(()=>{ if(!document.querySelector('#language').disabled){clearInterval(timer);resolve();}},10); })`);
+        assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#sqlInstance').value`), 'SQLEXPRESS');
+      }
       if (page === 'admins') {
         const validation = await window.webContents.executeJavaScript(`document.querySelector('[name="adminName"]').checkValidity(); document.querySelector('[name="adminName"]').validationMessage`);
         assert.equal(validation, locale === 'bg' ? 'Попълнете това поле.' : 'Complete this field.');
@@ -71,6 +81,29 @@ async function smoke() {
       await fs.writeFile('artifacts/review/' + page + '-' + locale + '.png', screenshot.toPNG());
     }
   }
+  await window.webContents.executeJavaScript(`document.querySelector('[data-page="sql"]').click(); document.querySelector('[name="adminPassword"]').value='Never-report-this-secret'; document.querySelector('#sqlForm').requestSubmit();`);
+  await window.webContents.executeJavaScript(`new Promise(resolve => {const timer=setInterval(()=>{if(!document.querySelector('#language').disabled && document.querySelector('#sqlResults .sql-step')){clearInterval(timer);resolve();}},10);})`);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="adminPassword"]').value`), '');
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#sqlResults').textContent.includes('Never-report-this-secret')`), false);
+  for (const locale of ['en', 'bg']) {
+    await selectLanguage(locale);
+    const resultText = await window.webContents.executeJavaScript(`document.querySelector('#sqlResults').textContent`);
+    assert.equal(/[А-Яа-я]/.test(resultText), locale === 'bg', 'SQL explanations must follow the selected language');
+    assert.ok(!resultText.includes('sql.reason.'));
+    assert.ok(!resultText.includes('sql.action.'));
+    await window.webContents.executeJavaScript(`document.querySelector('#sqlResults').scrollIntoView()`);
+    await fs.writeFile('artifacts/review/sql-results-' + locale + '.png', (await window.webContents.capturePage()).toPNG());
+  }
+  const changesBefore = operations.filter(operation => operation.action === 'sqlApply').length;
+  await window.webContents.executeJavaScript(`document.querySelector('[data-sql-change="restart"]').click()`);
+  await window.webContents.executeJavaScript(`new Promise(resolve => {const timer=setInterval(()=>{if(!document.querySelector('#language').disabled && document.querySelector('#sqlApplyButton')){clearInterval(timer);resolve();}},10);})`);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#sqlApplyButton').disabled`), true);
+  assert.equal(operations.filter(operation => operation.action === 'sqlApply').length, changesBefore);
+  await window.webContents.executeJavaScript(`document.querySelector('#sqlPlan').scrollIntoView()`);
+  await fs.writeFile('artifacts/review/sql-preview-bg.png', (await window.webContents.capturePage()).toPNG());
+  await window.webContents.executeJavaScript(`document.querySelector('[name="confirmSqlChange"]').checked=true; document.querySelector('[name="confirmSqlChange"]').dispatchEvent(new Event('change')); document.querySelector('#sqlApplyButton').click()`);
+  await window.webContents.executeJavaScript(`new Promise(resolve => {const timer=setInterval(()=>{if(!document.querySelector('#language').disabled && !document.querySelector('#sqlApplyButton')){clearInterval(timer);resolve();}},10);})`);
+  assert.equal(operations.filter(operation => operation.action === 'sqlApply').length, changesBefore + 1);
   await window.webContents.executeJavaScript(`document.querySelector('[data-page="install"]').click(); document.querySelector('[name="sqlHost"]').value='192.0.2.8'; document.querySelector('[name="sqlPassword"]').value='Unsent-test-secret'; document.querySelector('[name="httpAcknowledged"]').checked=true;`);
   await selectLanguage('en');
   const values = await window.webContents.executeJavaScript(`({ host: document.querySelector('[name="sqlHost"]').value, password: document.querySelector('[name="sqlPassword"]').value, checked: document.querySelector('[name="httpAcknowledged"]').checked })`);
@@ -99,6 +132,6 @@ async function smoke() {
   await window.webContents.executeJavaScript(`new Promise(resolve => { const interval = setInterval(() => { if (!document.querySelector('#language').disabled && document.querySelector('#webFeed').textContent.includes('1.5.0')) { clearInterval(interval); resolve(); } }, 10); })`);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#updateForm button').disabled`), true);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#updateNotice').hidden`), false);
-  console.log('PASS: all six pages in EN/BG, persistent language, preserved unsent fields, permanent donate footer, sandbox bridge, administrator form, password cleanup and check-only updates. Screenshots: artifacts/review/.');
+  console.log('PASS: all seven pages in EN/BG, SQL diagnostic evidence and explicit change confirmation, persistent language, preserved unsent fields, permanent donate footer, sandbox bridge, administrator form, password cleanup and check-only updates. Screenshots: artifacts/review/.');
 }
 app.whenReady().then(smoke).then(() => { clearTimeout(timer); app.exit(0); }).catch(error => { clearTimeout(timer); console.error(error); app.exit(1); });

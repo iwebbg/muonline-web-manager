@@ -16,6 +16,7 @@
     "test:ui": "node scripts/run-electron-smoke.js",
     "test:contract": "python3 scripts/test-laravel-contract.py",
     "test:sql": "python3 scripts/test-sql-backup.py",
+    "test:sql-troubleshooting": "python3 scripts/test-sql-troubleshooting.py",
     "validate:trust": "node scripts/validate-trust.js",
     "test:release": "python3 scripts/test-runtime-release.py"
   },

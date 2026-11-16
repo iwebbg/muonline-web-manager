@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, session, dialog, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, session, dialog, Menu, clipboard } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { Backend } from './backend.js';
@@ -74,6 +74,15 @@ if (!app.requestSingleInstanceLock()) {
       try {
         validateSender(event, input);
         const result = await backend.invoke(action, input);
+        if (action === 'sqlCopyReport') {
+          const text = result.steps.map(step => '[' + t('sql.status.' + step.status) + '] ' + t('sql.reason.' + step.reason) + '\n' + t('sql.action.' + step.action) + '\n' + JSON.stringify(step.evidence)).join('\n\n');
+          clipboard.writeText(JSON.stringify({ createdAt: result.createdAt, instance: result.selectedInstance, target: result.target }) + '\n\n' + text);
+          return { ok: true, result: { copied: true } };
+        }
+        if (action === 'sqlCopyPlan') {
+          clipboard.writeText(result);
+          return { ok: true, result: { copied: true } };
+        }
         if (action === 'setLanguage') {
           language = backend.language;
           updateMenu();

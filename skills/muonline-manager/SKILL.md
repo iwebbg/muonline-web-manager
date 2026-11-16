@@ -9,6 +9,8 @@ Read the appropriate repository document before changing a contract:
 - [Releases](../../docs/releases.md): production exports, signing, R2 paths, manager updates.
 - [Recovery](../../docs/recovery.md): partial bootstrap, config restore and migration failure.
 - [Review](../../docs/review.md): evidence and outstanding Windows acceptance checks.
+- [SQL Troubleshooting](../../docs/sql-troubleshooting.md): read-only Windows/WSL/Docker
+  diagnostics, independent SQL identities, privileged previews and VM acceptance.
 
 Discover commands and profile keys from the actual sibling Laravel source or the
 verified release, rather than copying an adapter list. `admin:create` currently uses

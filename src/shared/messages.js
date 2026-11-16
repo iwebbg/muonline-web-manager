@@ -91,7 +91,24 @@ const bulgarian = {
   "A stable application version is required.": "Нужна е стабилна версия на приложението.",
   "Latest application release is not ready for installation.": "Последната версия още не е готова за инсталиране.",
   "Installed application version could not be determined.": "Инсталираната версия не може да бъде определена.",
-  "No newer application version is available.": "Няма по-нова версия на приложението."
+  "No newer application version is available.": "Няма по-нова версия на приложението.",
+  "An equivalent firewall rule already exists. Retest instead of adding a duplicate.": "Еквивалентно firewall правило вече съществува. Повторете теста, вместо да добавяте дубликат.",
+  "Firewall rules could not be inspected. Retest before preparing a change.": "Firewall правилата не могат да бъдат проверени. Повторете преди подготовка на промяна.",
+  "Existing firewall rule does not match the previewed scope.": "Съществуващото firewall правило не съвпада с предвидения обхват.",
+  "Invalid measured IPv4 interface.": "Невалидни измерени IPv4 interface данни.",
+  "Measured WSL NAT scope is required.": "Нужен е съвпадащ измерен частен WSL NAT обхват. Не може да се предложи безопасно правило.",
+  "Invalid SQL troubleshooting input.": "Невалидни полета за SQL диагностика.",
+  "Invalid SQL instance.": "Невалиден SQL instance.",
+  "Windows SQL inventory is unavailable.": "Windows SQL информацията не е достъпна.",
+  "SQL troubleshooting could not inspect WSL. No credentials were logged.": "SQL диагностиката не може да провери WSL. Credentials не са записани в логове.",
+  "Unsupported SQL change.": "Неподдържана SQL системна промяна.",
+  "Select a discovered SQL instance first.": "Първо изберете открит SQL instance.",
+  "Selected SQL port is owned by another process or could not be verified.": "Избраният SQL порт е зает от друг процес или не може да бъде проверен.",
+  "Selected SQL port is owned by another process.": "Избраният SQL порт е зает от друг процес.",
+  "Choose an enabled IP section when Listen All is No.": "При Listen All: No изберете enabled IP секция.",
+  "SQL change needs a current preview and explicit confirmation.": "SQL промяната изисква актуален preview и изрично потвърждение.",
+  "SQL configuration or WSL addresses changed. Retest and prepare a new preview.": "SQL конфигурацията или WSL адресите са променени. Проверете отново и подгответе нов preview.",
+  "Run SQL troubleshooting before copying a report.": "Стартирайте SQL диагностиката преди копиране на отчет."
 };
 
 const prefixes = [
