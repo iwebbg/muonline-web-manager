@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { execute } from './process.js';
+import { execute, launchDetached } from './process.js';
 import { DEFAULT_CDN, DEFAULT_CHANNEL, MANAGER_VERSION, checkRelease, downloadRelease, newer } from './releases.js';
 
 const DISTRIBUTION = 'Ubuntu-24.04';
@@ -92,8 +92,14 @@ export class Backend {
   /** Install WSL through an explicit button with Windows elevation and no user script input. */
   async installWsl() {
     this.requireWindows();
-    await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "$p = Start-Process -FilePath wsl.exe -ArgumentList '--install','-d','Ubuntu-24.04','--no-launch' -Verb RunAs -Wait -PassThru; exit $p.ExitCode"], '', 900000);
-    return 'WSL installation requested. Restart Windows if required, launch Ubuntu-24.04 once to finish initialization, then check prerequisites.';
+    await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "$p = Start-Process -FilePath wsl.exe -ArgumentList '--install','--no-distribution' -Verb RunAs -Wait -PassThru; exit $p.ExitCode"], '', 900000);
+    try {
+      await execute('wsl.exe', ['--set-default-version', '2'], '', 60000);
+      await execute('wsl.exe', ['--install', '-d', DISTRIBUTION, '--no-launch'], '', 900000);
+    } catch {
+      return 'WSL features requested. Restart Windows if required, then run WSL setup again to install Ubuntu-24.04 for this Windows user.';
+    }
+    return 'WSL2 and Ubuntu installation requested for this user. Launch Ubuntu-24.04 once to finish initialization, then check prerequisites.';
   }
 
   /** Install Docker from its official Ubuntu repository, then register a user logon keepalive task. */
@@ -106,9 +112,15 @@ export class Backend {
     }
     const script = await readFile(path.join(this.resources, 'runtime', 'setup-docker.sh'), 'utf8');
     await execute('wsl.exe', ['-d', DISTRIBUTION, '-u', 'root', '--exec', 'sh', '-s'], script);
-    const keepalive = await readFile(path.join(this.resources, 'runtime', 'keepalive.ps1'), 'utf8');
-    await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '-'], keepalive, 60000);
+    await this.ensureKeepalive();
     return 'Docker installed. MuOnline-Web-WSL logon task keeps services alive when the panel closes.';
+  }
+
+  /** Keep WSL alive independently of the panel even when Docker was already installed. */
+  async ensureKeepalive() {
+    this.requireWindows();
+    const script = await readFile(path.join(this.resources, 'runtime', 'keepalive.ps1'), 'utf8');
+    await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '-'], script, 60000);
   }
 
   /** Check separate web and manager feeds; never download or apply automatically. */
@@ -134,6 +146,7 @@ export class Backend {
       throw new Error('Check the signed web release feed before installing or updating.');
     }
     await this.prerequisites();
+    await this.ensureKeepalive();
     const folder = await mkdtemp(path.join(os.tmpdir(), 'muonline-release-'));
     try {
       const windowsPaths = await downloadRelease(manifest, folder);
@@ -156,8 +169,8 @@ export class Backend {
     const folder = await mkdtemp(path.join(this.userData, 'manager-update-'));
     const paths = await downloadRelease(this.managerRelease, folder);
     // NSIS owns UAC and replacement. The runtime remains independently managed in WSL.
-    await execute(paths.installer, [], '', 1800000);
-    return 'Manager installer finished. Reopen the panel to use the installed version.';
+    await launchDetached(paths.installer);
+    return 'Verified manager installer launched. The panel will close; WSL services continue.';
   }
 
   /** Serialize mutations and reject any operation absent from the IPC allow-list. */
@@ -189,8 +202,10 @@ export class Backend {
           return await this.deploy(action, input);
         case 'updateManager':
           return await this.updateManager();
-        case 'status':
         case 'start':
+          await this.ensureKeepalive();
+          return await this.runtime({ ...input, action });
+        case 'status':
         case 'stop':
         case 'restart':
         case 'logs':

@@ -26,3 +26,17 @@ test('release feed settings contain no credential storage fields', () => {
     assert.throws(() => backend.validateSettings({ cdn, webChannel: 'web/stable', managerChannel: 'manager/stable' }));
   }
 });
+
+test('deploy input cannot replace authenticated metadata, archive paths or selected action', async () => {
+  const backend = new Backend('/unused', '/unused');
+  const authenticated = { version: '1.3.0', artifacts: {} };
+  backend.webRelease = authenticated;
+  backend.prerequisites = async () => true;
+  backend.ensureKeepalive = async () => {};
+  let received;
+  backend.runtime = async request => { received = request; return 'ok'; };
+  await backend.deploy('install', { action: 'update', release: { forged: true }, paths: { application: '/untrusted.zip' }, settings: { profile: 'example' } });
+  assert.equal(received.action, 'install');
+  assert.equal(received.release, authenticated);
+  assert.deepEqual(received.paths, {});
+});

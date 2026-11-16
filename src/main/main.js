@@ -52,7 +52,11 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle('manager:invoke', async (event, action, input) => {
       try {
         validateSender(event, input);
-        return { ok: true, result: await backend.invoke(action, input) };
+        const result = await backend.invoke(action, input);
+        if (action === 'updateManager') {
+          setTimeout(() => app.quit(), 200);
+        }
+        return { ok: true, result };
       } catch (error) {
         return { ok: false, error: error.message };
       }
@@ -65,6 +69,9 @@ if (!app.requestSingleInstanceLock()) {
       await shell.openExternal(target);
     });
     createWindow();
+  }).catch(() => {
+    dialog.showErrorBox('Manager startup failed', 'Cannot load the manager resources or trust configuration. Reinstall the manager or inspect the public trust JSON.');
+    app.quit();
   });
   app.on('window-all-closed', () => app.quit());
 }

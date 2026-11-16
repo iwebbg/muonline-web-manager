@@ -1,11 +1,11 @@
 import { createHash, createPublicKey, verify } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, readFileSync } from 'node:fs';
 import { rm, mkdir } from 'node:fs/promises';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 
-export const MANAGER_VERSION = '0.1.0';
+export const MANAGER_VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version;
 export const DEFAULT_CDN = 'https://cdn.interweb.bg';
 export const DEFAULT_CHANNEL = 'muonline-web/releases/v1.3.0';
 

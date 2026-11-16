@@ -29,17 +29,17 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def run(arguments, *, data=None, timeout=1800):
+def run(arguments, *, data=None, timeout=1800, allow_failure=False):
     """Execute argument arrays without a shell and suppress potentially secret diagnostics."""
     result = subprocess.run(arguments, input=data, text=True, capture_output=True, timeout=timeout)
-    if result.returncode:
+    if result.returncode and not allow_failure:
         raise RuntimeError('Runtime command failed: ' + arguments[0] + ' (exit ' + str(result.returncode) + '). Check runtime diagnostics; output is withheld to protect credentials.')
     return result.stdout[-200000:]
 
 
-def compose(*arguments, data=None):
+def compose(*arguments, data=None, allow_failure=False):
     """Operate only on the manager-owned Compose project."""
-    return run(['docker', 'compose', '--project-name', 'muonline-manager', '--file', str(COMPOSE), *arguments], data=data)
+    return run(['docker', 'compose', '--project-name', 'muonline-manager', '--file', str(COMPOSE), *arguments], data=data, allow_failure=allow_failure)
 
 
 def atomic(path, content):
@@ -121,6 +121,8 @@ def nginx_config(access, tls=False):
     host = access['host']
     if ':' in host:
         host = '[' + host + ']'
+    if access['mode'] == 'domain' and not tls:
+        return 'server { listen 80; server_name ' + host + '; location ^~ /.well-known/acme-challenge/ { root /var/www/certbot; } location / { return 503; } }\n'
     common = '''
     root /var/www/html/public;
     index index.php;
@@ -158,9 +160,9 @@ def compose_config(access):
     services['queue']['depends_on']['app'] = {'condition': 'service_healthy'}
     services['scheduler']['depends_on']['app'] = {'condition': 'service_healthy'}
     binding = '127.0.0.1:' if access['mode'] == 'local' else ''
-    services['nginx'] = {'image': 'nginx:1.29-alpine', 'restart': 'unless-stopped', 'ports': [binding + '80:80'] + ([binding + '443:443'] if access['mode'] == 'domain' else []), 'volumes': [mount + ':ro', str(ROOT / 'nginx.conf') + ':/etc/nginx/conf.d/default.conf:ro', str(ROOT / 'acme') + ':/var/www/certbot:ro', str(ROOT / 'certificates') + ':/etc/letsencrypt:ro'], 'depends_on': {'app': {'condition': 'service_healthy'}}, 'healthcheck': {'test': ['CMD-SHELL', 'wget -q --spider http://127.0.0.1/health'], 'interval': '10s', 'timeout': '5s', 'retries': 15}}
+    services['nginx'] = {'image': 'nginx:1.29-alpine', 'restart': 'unless-stopped', 'ports': [binding + '80:80'] + ([binding + '443:443'] if access['mode'] == 'domain' else []), 'volumes': [mount + ':ro', str(ROOT / 'nginx.conf') + ':/etc/nginx/conf.d/default.conf:ro', str(ROOT / 'acme') + ':/var/www/certbot:ro', str(ROOT / 'certificates') + ':/etc/letsencrypt:ro'], 'depends_on': {'app': {'condition': 'service_healthy'}}, 'healthcheck': {'test': ['CMD-SHELL', 'wget -q --spider http://127.0.0.1/up'], 'interval': '10s', 'timeout': '5s', 'retries': 15}}
     if access['mode'] == 'domain':
-        services['nginx']['healthcheck']['test'] = ['CMD-SHELL', 'wget -q --spider --no-check-certificate https://127.0.0.1/health']
+        services['nginx']['healthcheck']['test'] = ['CMD-SHELL', 'wget -q --spider --no-check-certificate https://127.0.0.1/up']
     services['redis'] = {'image': 'redis:8-alpine', 'restart': 'unless-stopped', 'command': ['redis-server', '--appendonly', 'yes'], 'volumes': ['redis-data:/data'], 'healthcheck': {'test': ['CMD', 'redis-cli', 'ping'], 'interval': '5s', 'timeout': '3s', 'retries': 20}}
     services['certbot'] = {'image': 'certbot/certbot:v4.0.0', 'profiles': ['tools'], 'volumes': [str(ROOT / 'acme') + ':/var/www/certbot', str(ROOT / 'certificates') + ':/etc/letsencrypt']}
     return {'services': services, 'volumes': {'redis-data': {}}}
@@ -200,6 +202,11 @@ def safe_extract(archive, destination, kind):
             total += member.file_size
             require(total <= 4 * 1024**3, 'Archive exceeds extraction size limit.')
         bundle.extractall(destination)
+    # Private staging is root-only, but deployed code must be readable by PHP/nginx.
+    for root, directories, files in os.walk(destination):
+        os.chmod(root, 0o755)
+        for filename in files:
+            os.chmod(Path(root) / filename, 0o644)
 
 
 def stage_release(request):
@@ -230,13 +237,37 @@ def stage_release(request):
 
 def initialize_storage():
     """Make persistent Laravel write directories available to the runtime identity."""
+    os.chmod(APP, 0o755)
     for relative in ('storage/app/public', 'storage/framework/cache/data', 'storage/framework/sessions', 'storage/framework/views', 'storage/logs', 'bootstrap/cache'):
         directory = APP / relative
         directory.mkdir(parents=True, exist_ok=True)
         run(['chown', '-R', '33:33', str(directory)])
+        run(['chmod', '-R', 'u+rwX,go+rX', str(directory)])
+    for relative in ('storage', 'storage/app', 'storage/framework', 'storage/framework/cache', 'bootstrap'):
+        os.chmod(APP / relative, 0o755)
     link = APP / 'public/storage'
     if not link.exists() and not link.is_symlink():
         link.symlink_to('../storage/app/public')
+
+
+def diagnose_sql():
+    """Return only recognized doctor messages; discard arbitrary command and exception output."""
+    output = compose('exec', '-T', 'app', 'php', 'artisan', 'game:doctor', '--no-interaction', allow_failure=True)
+    output = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', output)
+    prefixes = (
+        'Game database connection ', 'Game database diagnostics ', 'Required game profile schema ',
+        'Missing required game table:', 'Missing required game column:', 'Missing required game procedure:',
+        'SQL identity ', 'Unsafe SQL identity:', 'Unsafe SQL permission:', 'Missing SQL permission:',
+        'Required adapter object permissions ', 'Authoritative item serial procedure ',
+        'Game write safety switches ', 'Unsafe startup flags:', 'SQL role verification ',
+        'Elevated permission verification ', 'Object permission verification ',
+    )
+    messages = []
+    for line in output.splitlines():
+        line = re.sub(r'^(INFO|ERROR|WARN)\s+', '', line.strip()).strip()
+        if line.startswith(prefixes):
+            messages.append(line[:1024])
+    return {'passed': 'Game database diagnostics passed.' in messages, 'messages': messages or ['No recognized diagnostics returned. Check service status and runtime installation.']}
 
 
 def create_admin(details):
@@ -269,13 +300,51 @@ def install(request):
     require(values['profile'] in request['release']['profiles'], 'Choose a profile from the release registry.')
     state = {'version': request['release']['version'], 'access': access_settings(values['access']), 'environment': {}}
     environment = state['environment']
-    environment.update(APP_NAME='MuOnline Web', APP_ENV=values['appEnv'], APP_DEBUG='false', APP_KEY='base64:' + base64.b64encode(secrets.token_bytes(32)).decode(), DB_CONNECTION='sqlsrv', DB_HOST=host, DB_PORT=str(port), DB_DATABASE=web, DB_USERNAME=app_login, DB_PASSWORD=password(), DB_ENCRYPT='true', DB_TRUST_SERVER_CERTIFICATE=str(values.get('trustCertificate') is True).lower(), GAME_DB_CONNECTION='sqlsrv', GAME_DB_HOST=host, GAME_DB_PORT=str(port), GAME_DB_MUONLINE=game, GAME_DB_RANKING=game, GAME_DB_USERNAME=game_login, GAME_DB_PASSWORD=password(), GAME_DB_ENCRYPT='true', GAME_DB_TRUST_SERVER_CERTIFICATE=str(values.get('trustCertificate') is True).lower(), GAME_DATA_SOURCE='database', GAME_SERVER_PROFILE=values['profile'], GAME_EVENT_PROFILE=values['profile'], GAME_ACCOUNT_PASSWORD_SCHEME='darksteam_md5' if values['profile'] == 'darksteam_1_0m' else 'plaintext', GAME_DB_READONLY='true', GAME_WRITES_ENABLED='false', GAME_RANKING_CONNECTION='game', GAME_BATTLE_CORE_READS_ENABLED='false', REDIS_HOST='redis', CACHE_STORE='redis', SESSION_DRIVER='redis', QUEUE_CONNECTION='redis', APP_DB_BOOTSTRAP='false', AUTO_MIGRATE='false')
+    environment.update(
+        APP_NAME='MuOnline Web',
+        APP_ENV=values['appEnv'],
+        APP_DEBUG='false',
+        APP_KEY='base64:' + base64.b64encode(secrets.token_bytes(32)).decode(),
+        DB_CONNECTION='sqlsrv',
+        DB_HOST=host,
+        DB_PORT=str(port),
+        DB_DATABASE=web,
+        DB_USERNAME=app_login,
+        DB_PASSWORD=password(),
+        DB_ENCRYPT='true',
+        DB_TRUST_SERVER_CERTIFICATE=str(values.get('trustCertificate') is True).lower(),
+        GAME_DB_CONNECTION='sqlsrv',
+        GAME_DB_HOST=host,
+        GAME_DB_PORT=str(port),
+        GAME_DB_MUONLINE=game,
+        GAME_DB_RANKING=game,
+        GAME_DB_USERNAME=game_login,
+        GAME_DB_PASSWORD=password(),
+        GAME_DB_ENCRYPT='true',
+        GAME_DB_TRUST_SERVER_CERTIFICATE=str(values.get('trustCertificate') is True).lower(),
+        GAME_DATA_SOURCE='database',
+        GAME_SERVER_PROFILE=values['profile'],
+        GAME_EVENT_PROFILE=values['profile'],
+        GAME_ACCOUNT_PASSWORD_SCHEME='darksteam_md5' if values['profile'] == 'darksteam_1_0m' else 'plaintext',
+        GAME_DB_READONLY='true',
+        GAME_WRITES_ENABLED='false',
+        GAME_RANKING_CONNECTION='game',
+        GAME_BATTLE_CORE_READS_ENABLED='false',
+        REDIS_HOST='redis',
+        CACHE_STORE='redis',
+        SESSION_DRIVER='redis',
+        QUEUE_CONNECTION='redis',
+        APP_DB_BOOTSTRAP='false',
+        AUTO_MIGRATE='false',
+    )
     sql_secret = single_line(values['sqlPassword'], 1024)
     staging = stage_release(request)
+    state['themeHashes'] = theme_hashes(staging)
     staging.rename(APP)
     initialize_storage()
     for directory in ('acme', 'certificates', 'backups'):
         (ROOT / directory).mkdir(exist_ok=True)
+    os.chmod(ROOT / 'acme', 0o755)
     write_configuration(state)
     save_state(dict(state, phase='bootstrap-pending'))
     return finish_install(state, {'sqlAdmin': admin_login, 'sqlPassword': sql_secret, 'administrator': values['administrator']})
@@ -301,6 +370,7 @@ def finish_install(state, credentials):
         state['phase'] = 'runtime-bootstrapped'
         save_state(state)
     compose('up', '-d', '--wait', '--wait-timeout', '300', 'app', 'queue', 'scheduler')
+    require(diagnose_sql()['passed'], 'Game database diagnostics failed. Run SQL diagnostics to inspect schema and permission checks.')
     if state['phase'] == 'runtime-bootstrapped':
         create_admin(credentials['administrator'])
         state['phase'] = 'administrator-created'
@@ -336,6 +406,7 @@ def apply_access(state, settings, initial=False):
         if source.exists():
             shutil.copy2(source, backup / source.name)
     state['access'] = access
+    save_state(dict(previous, phase='access-changing'))
     try:
         write_configuration(state)
         compose('up', '-d', '--force-recreate', 'app', 'queue', 'scheduler', 'nginx')
@@ -348,7 +419,7 @@ def apply_access(state, settings, initial=False):
         elif Path('/etc/systemd/system/muonline-certificates.timer').exists():
             renewal_timer(False)
         compose('exec', '-T', 'app', 'php', 'artisan', 'config:clear', '--no-interaction')
-        compose('up', '-d', '--wait', '--wait-timeout', '300')
+        compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
         compose('exec', '-T', 'nginx', 'nginx', '-t')
         save_state(state)
     except Exception:
@@ -362,10 +433,12 @@ def apply_access(state, settings, initial=False):
         try:
             compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
             compose('exec', '-T', 'app', 'php', 'artisan', 'config:clear', '--no-interaction')
+            compose('restart', 'app', 'queue', 'scheduler')
             if previous['access']['mode'] == 'domain' and not initial:
                 renewal_timer(True)
         except Exception:
             raise RuntimeError('Access change and recovery failed. Restore the private configuration backup: ' + str(backup)) from None
+        save_state(previous)
         raise RuntimeError('Access change failed; previous configuration restored. Backup: ' + str(backup)) from None
     return 'Access configuration applied: ' + access['url']
 
@@ -405,6 +478,29 @@ def backup(state, credentials):
     return str(destination)
 
 
+def theme_hashes(directory):
+    """Record shipped theme contents so updates preserve changes without freezing stock themes."""
+    hashes = {}
+    for relative in ('resources/views/themes', 'public/themes'):
+        base = directory / relative
+        if base.exists():
+            for file in base.rglob('*'):
+                if file.is_file() and not file.is_symlink():
+                    with file.open('rb') as stream:
+                        hashes[file.relative_to(directory).as_posix()] = hashlib.file_digest(stream, 'sha256').hexdigest()
+    return hashes
+
+
+def preserve_custom_themes(staging, previous_hashes):
+    """Copy new or locally modified theme files while allowing stock template fixes to update."""
+    current = theme_hashes(APP)
+    for relative, digest in current.items():
+        if previous_hashes.get(relative) != digest:
+            target = staging / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(APP / relative, target)
+
+
 def update(request):
     """Stage a release, back up SQL/data, migrate explicitly and preserve mutable site content."""
     state = load_state()
@@ -415,13 +511,15 @@ def update(request):
     staging = stage_release(request)
     old = ROOT / ('previous-' + state['version'] + '-' + secrets.token_hex(4))
     migration_started = False
-    switched = False
     backup_path = None
+    save_state(dict(state, phase='updating', attemptedVersion=version))
     try:
         compose('exec', '-T', 'app', 'php', 'artisan', 'down', '--retry=60', '--no-interaction')
         compose('stop', 'queue', 'scheduler')
         backup_path = backup(state, request['backup'])
-        for relative in ('storage', 'resources/views/themes', 'public/themes'):
+        next_theme_hashes = theme_hashes(staging)
+        preserve_custom_themes(staging, state.get('themeHashes', {}))
+        for relative in ('storage',):
             source = APP / relative
             if source.exists():
                 shutil.copytree(source, staging / relative, dirs_exist_ok=True, symlinks=True)
@@ -429,28 +527,36 @@ def update(request):
         compose('stop', 'app', 'nginx')
         APP.rename(old)
         staging.rename(APP)
-        switched = True
         initialize_storage()
         write_configuration(state, tls=state['access']['mode'] == 'domain')
         compose('build', 'app')
+        save_state(dict(state, phase='migration-recovery-required', attemptedVersion=version, backup=backup_path))
         migration_started = True
         compose('run', '--rm', '--no-deps', 'app', 'php', 'artisan', 'migrate', '--force', '--no-interaction')
         compose('run', '--rm', '--no-deps', 'app', 'php', 'artisan', 'optimize:clear', '--no-interaction')
         compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
         compose('exec', '-T', 'app', 'php', 'artisan', 'up', '--no-interaction')
         state['version'] = version
+        state['themeHashes'] = next_theme_hashes
         save_state(state)
         return 'Updated to ' + version + '. Backup: ' + backup_path
     except Exception:
         if migration_started:
             save_state(dict(state, phase='migration-recovery-required', attemptedVersion=version, backup=backup_path))
             raise RuntimeError('Update failed after migrations began. Site remains in maintenance. Do not automatically roll back SQL. Backup: ' + str(backup_path)) from None
-        if switched:
-            failed = ROOT / ('failed-' + secrets.token_hex(4))
-            APP.rename(failed)
-            old.rename(APP)
-        compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
-        compose('exec', '-T', 'app', 'php', 'artisan', 'up', '--no-interaction')
+        try:
+            if old.exists():
+                if APP.exists():
+                    failed = ROOT / ('failed-' + secrets.token_hex(4))
+                    APP.rename(failed)
+                old.rename(APP)
+                write_configuration(state, tls=state['access']['mode'] == 'domain')
+                compose('build', 'app')
+            compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
+            compose('exec', '-T', 'app', 'php', 'artisan', 'up', '--no-interaction')
+            save_state(state)
+        except Exception:
+            raise RuntimeError('Update failed before migrations, but runtime recovery also failed. Inspect the persisted updating phase. Backup: ' + str(backup_path)) from None
         raise RuntimeError('Update failed before migrations; original runtime restored.') from None
     finally:
         if staging.exists():
@@ -461,6 +567,8 @@ def dispatch(request):
     """Expose an explicit runtime operation allow-list, with no arbitrary command endpoint."""
     action = request.get('action')
     if action == 'prerequisites':
+        require(run(['uname', '-m']).strip() == 'x86_64', 'This runtime release requires x64 WSL. ARM64 is not supported yet.')
+        require('--env-from-file' in run(['docker', 'compose', 'run', '--help']), 'Upgrade Docker Compose; --env-from-file support is required.')
         return {'docker': run(['docker', 'info', '--format', '{{.ServerVersion}}']).strip(), 'compose': run(['docker', 'compose', 'version', '--short']).strip(), 'systemd': run(['systemctl', 'is-active', 'docker']).strip()}
     if action == 'install':
         return install(request)
@@ -468,7 +576,13 @@ def dispatch(request):
         if not STATE.exists():
             return {'installed': False}
         state = load_state()
-        return {'installed': True, 'version': state['version'], 'phase': state.get('phase'), 'access': state['access'], 'services': compose('ps', '--all', '--format', 'json')}
+        try:
+            services = compose('ps', '--all', '--format', 'json')
+            error = None
+        except RuntimeError as exception:
+            services = '[]'
+            error = str(exception)
+        return {'installed': True, 'version': state['version'], 'phase': state.get('phase'), 'access': state['access'], 'services': services, 'runtimeError': error}
     state = load_state()
     if action == 'resumeInstall':
         return finish_install(state, request['settings'])
@@ -483,10 +597,10 @@ def dispatch(request):
         for key, value in state['environment'].items():
             if any(marker in key for marker in ('PASSWORD', 'KEY', 'TOKEN', 'SECRET')) and value:
                 output = output.replace(value, '[REDACTED]')
-        return re.sub(r'(?i)(password|token|secret|authorization)([=: ]+)[^\s&,]+', r'\1\2[REDACTED]', output)
+        output = re.sub(r'(?i)(authorization)([=: ]+)[^\r\n]+', r'\1\2[REDACTED]', output)
+        return re.sub(r'(?i)(password|token|secret)([=: ]+)[^\s&,]+', r'\1\2[REDACTED]', output)
     if action == 'doctor':
-        compose('exec', '-T', 'app', 'php', 'artisan', 'game:doctor', '--no-interaction')
-        return 'game:doctor passed.'
+        return diagnose_sql()
     if action == 'admin':
         return create_admin(request['administrator'])
     if action == 'access':

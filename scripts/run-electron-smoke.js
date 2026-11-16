@@ -1,0 +1,10 @@
+import { createRequire } from 'node:module';
+import { spawn } from 'node:child_process';
+const require = createRequire(import.meta.url);
+const electron = require('electron');
+const environment = { ...process.env };
+delete environment.ELECTRON_RUN_AS_NODE;
+const args = process.platform === 'linux' ? ['--no-sandbox', '--disable-gpu'] : [];
+const child = spawn(electron, [...args, 'tests/smoke-panel.cjs'], { stdio: 'inherit', env: environment, shell: false });
+child.on('error', error => { console.error(error.message); process.exitCode = 1; });
+child.on('close', code => { process.exitCode = code ?? 1; });

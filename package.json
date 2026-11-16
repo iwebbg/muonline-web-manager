@@ -12,7 +12,12 @@
     "test:node": "node --test --test-isolation=none tests/*.test.js",
     "test:python": "python -m unittest discover -s tests -p test_*.py",
     "dist:win": "electron-builder --win nsis --x64 --publish never",
-    "release:web": "python3 scripts/package-release.py"
+    "release:web": "python3 scripts/package-release.py",
+    "test:ui": "node scripts/run-electron-smoke.js",
+    "test:contract": "python3 scripts/test-laravel-contract.py",
+    "test:sql": "python3 scripts/test-sql-backup.py",
+    "validate:trust": "node scripts/validate-trust.js",
+    "test:release": "python3 scripts/test-runtime-release.py"
   },
   "devDependencies": {
     "electron": "45.3.3",
@@ -29,7 +34,12 @@
     "extraResources": [
       {
         "from": "runtime",
-        "to": "runtime"
+        "to": "runtime",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
       },
       {
         "from": "build/trust.json",
@@ -50,5 +60,8 @@
   },
   "overrides": {
     "minimatch": "11.0.1"
+  },
+  "engines": {
+    "node": ">=24.0.0"
   }
 }

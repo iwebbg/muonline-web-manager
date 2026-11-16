@@ -44,15 +44,27 @@ function populate() {
     document.querySelector('#webVersion').textContent = status.version;
     document.querySelector('#accessMode').textContent = status.access.mode.toUpperCase();
     document.querySelector('#siteUrl').textContent = status.access.url;
-    document.querySelector('#statusDetail').textContent = 'Installation phase: ' + status.phase;
+    let services = [];
+    try {
+      const raw = status.services?.trim() || '[]';
+      services = raw.startsWith('[') ? JSON.parse(raw) : raw.split('\n').map(line => JSON.parse(line));
+    } catch {
+      services = [];
+    }
+    document.querySelector('#statusDetail').textContent = 'Installation phase: ' + status.phase + services.map(service => '\n' + service.Service + ': ' + service.State + (service.Health ? ' / ' + service.Health : '')).join('');
   }
   if (page === 'install') {
     const select = document.querySelector('#profiles');
+    const selected = select.value;
+    select.replaceChildren();
     for (const profile of feeds.web?.profiles ?? []) {
       const option = document.createElement('option');
       option.value = profile;
       option.textContent = profile;
       select.append(option);
+    }
+    if ([...select.options].some(option => option.value === selected)) {
+      select.value = selected;
     }
     if (!select.options.length) {
       const option = document.createElement('option');
@@ -116,9 +128,7 @@ async function perform(action, input = {}, quiet = false) {
     }
     if (action === 'updates') {
       feeds = result;
-      if (page === 'install' || page === 'updates') {
-        render();
-      }
+      populate();
     }
     if (action === 'status') {
       status = result;

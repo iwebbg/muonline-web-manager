@@ -32,3 +32,15 @@ export function execute(file, args, input = '', timeout = 1800000) {
     child.stdin.end(input);
   });
 }
+
+/** Hand off an authenticated installer to Windows without keeping the panel alive. */
+export function launchDetached(file) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(file, [], { shell: false, detached: true, windowsHide: false, stdio: 'ignore' });
+    child.once('error', () => reject(new Error('Cannot launch the verified manager installer.')));
+    child.once('spawn', () => {
+      child.unref();
+      resolve();
+    });
+  });
+}
