@@ -9,7 +9,7 @@ that bucket name is not part of the public URL.
 ```sh
 python3 scripts/package-release.py \
   --source ../muonline-web-laravel \
-  --ref HEAD --version 1.3.0 --output artifacts/web \
+  --ref v1.3.0 --version 1.3.0 --output artifacts/web \
   --cdn https://cdn.interweb.bg
 ```
 
@@ -56,9 +56,8 @@ Only the public key belongs in `build/trust.json`:
 
 Run `npm run validate:trust` for review builds, or
 `node scripts/validate-trust.js --require-key` before production packaging.
-The repository intentionally contains an empty trust store. No production trust key
-was supplied. Empty trust refuses all releases; there is no trust-on-first-use or
-unsigned bypass. Windows CI can inject the reviewed public JSON via repository
+An empty trust store refuses all releases; there is no trust-on-first-use or unsigned
+bypass. The operator-owned public key must be pinned before building the manager. Windows CI can inject the reviewed public JSON via repository
 variable `RELEASE_TRUST_JSON`. Keep the same key across releases, or ship a manager
 with old and new public keys before rotating the signer. Never accept a new trust key
 from the release feed itself. Reformatting the manifest after signing invalidates it.
@@ -82,12 +81,37 @@ https://cdn.interweb.bg/muonline-web/releases/v1.3.0/manifest.json
 https://cdn.interweb.bg/muonline-web/releases/v1.3.0/manifest.json.sig
 ```
 
-The folder was reported empty and no objects have been assumed uploaded. Publish
-artifacts first and manifests last. For ongoing discovery, maintain a signed stable
-feed (e.g. `muonline-web/releases/stable`) whose manifest points at immutable versioned
-artifact URLs, and set that prefix in the panel. The initial version-specific feed
-cannot discover other version folders on its own. Cache manifests/signatures briefly
-and immutable artifact URLs for longer; account for CDN consistency during publishing.
+Publish artifacts first and manifests last. The manager now discovers the highest
+stable tag in the public `iwebbg/muonline-web-laravel` repository automatically. Both
+`v1.4.0` and `1.4.0` resolve to `muonline-web/releases/v1.4.0/`. Prereleases are ignored;
+numeric SemVer ordering is used across paginated tags. The internal default prefix is
+`muonline-web/releases/v{version}`. Old saved `v1.3.0` defaults migrate automatically.
+
+Each tag needs its matching production ZIPs, manifest and detached signature in that
+versioned directory. A GitHub source ZIP alone has no production vendor/build and is
+never installed. The authenticated manifest version must equal the discovered tag.
+If the latest tag has missing/invalid/incompatible runtime metadata, the panel reports
+that the latest version is not ready and does not silently fall back to an older tag.
+Tag creation does not by itself trigger the manual packaging workflow or upload R2
+objects; publishing is a separate release-operator responsibility.
+
+Checks happen on launch, every six hours while the panel is open, on explicit refresh,
+and again when Install/Update is clicked. GitHub metadata is only discovery: the pinned
+Ed25519 key remains the authority for installing code. GitHub failures/rate limiting
+are shown explicitly and do not reuse a stale cached candidate as the latest version.
+The public API requires no embedded token; private repositories are not supported by
+this default configuration. Pagination is bounded at 1,000 tags and fails explicitly
+if that bound is reached. API reference: [GitHub repository tags](https://docs.github.com/en/rest/repos/repos#list-repository-tags).
+
+The installed version is read from the private WSL state and is recorded only after
+successful installation/update. Failed migrations do not advance it. A newer ready
+version produces a notification, and a completed update removes that notification.
+Updates still require an explicit button. No downgrade or automatic SQL rollback is
+implied. Ordinary users never enter GitHub repository names, release prefixes, hashes
+or trust keys. Only a CDN base override remains under an advanced disclosure.
+
+Cache manifests/signatures briefly and immutable artifact URLs for longer; account
+for CDN consistency during publishing.
 
 ## Manager build and updates
 

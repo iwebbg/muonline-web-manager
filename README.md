@@ -5,6 +5,9 @@ Web Laravel stack. The backend runs in Ubuntu-24.04 / WSL2 with Docker Engine.
 Closing the panel leaves services running; Windows sleep/shutdown stops availability.
 The panel supports English and Bulgarian through the language selector in the header.
 The choice is saved across restarts; NSIS also offers English/Bulgarian selection.
+Installation automatically selects the latest stable Laravel GitHub tag and its signed
+CDN runtime. Updates compare that version with the saved installed version and notify
+the user; application changes require an explicit Update button.
 
 The current implementation is **ready for code/UI review, not a verified production
 Windows release**. Read [review evidence and remaining checks](docs/review.md).

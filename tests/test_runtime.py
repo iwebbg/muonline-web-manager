@@ -133,6 +133,29 @@ class RuntimeTests(unittest.TestCase):
         self.assertFalse(any('rollback' in arg for call in calls for arg in call))
         self.assertFalse(any(call[-2:] == ('up', '--no-interaction') for call in calls))
 
+    def test_successful_update_records_version_only_after_migrations_and_preserves_app_key(self):
+        staging = self.root / 'staging/version'
+        staging.mkdir(parents=True)
+        (worker.APP / '.env').write_text('APP_KEY=original-key')
+        self.state['environment']['GAME_SERVER_PROFILE'] = 'test'
+        worker.save_state(self.state)
+        observed_versions = []
+
+        def compose(*args, **kwargs):
+            if 'migrate' in args:
+                observed_versions.append(json.loads(worker.STATE.read_text())['version'])
+            return ''
+
+        request = {'release': {'version': '1.4.0', 'profiles': ['test']}, 'backup': {}}
+        with patch.object(worker, 'stage_release', return_value=staging), patch.object(worker, 'backup', return_value='/private/backup'), patch.object(worker, 'compose', side_effect=compose), patch.object(worker, 'initialize_storage'), patch.object(worker, 'write_configuration'):
+            worker.update(request)
+        record = json.loads(worker.STATE.read_text())
+        self.assertEqual(observed_versions, ['1.3.0'])
+        self.assertEqual(record['version'], '1.4.0')
+        self.assertEqual(record['phase'], 'ready')
+        self.assertEqual(record['environment']['APP_KEY'], 'original-key')
+        self.assertIn('original-key', (worker.APP / '.env').read_text())
+
     def test_backup_credentials_only_cross_stdin_and_are_not_archived(self):
         requests = []
         worker.COMPOSE.write_text('{}')

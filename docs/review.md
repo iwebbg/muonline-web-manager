@@ -120,3 +120,21 @@ Screenshots use `artifacts/review/<page>-en.png` and `<page>-bg.png`. The biling
 NSIS welcome/support macros compile in the native makensis syntax harness. Actual
 Windows installer execution and native Windows dialogs still require Windows CI/VM
 acceptance; this change does not claim those checks passed.
+
+## Automatic latest-version discovery follow-up
+
+The release settings page was removed from normal navigation. The panel now queries
+the public Laravel GitHub tags API and resolves the highest stable tag to its signed
+versioned CDN runtime. Installation selects the latest version afresh. The recorded
+WSL version controls update availability; successful updates clear the notification.
+A tagged version with missing runtime metadata is visible as pending and cannot be
+applied. An older version is never silently selected.
+
+Verification: 22 Node tests and 16 Python tests cover pagination/numeric ordering,
+tag filtering, matching signatures/versions, unpublished releases, GitHub errors,
+settings migration, fresh install discovery and version persistence after migrations.
+The EN/BG Electron smoke covers all six remaining pages, an explicit 1.3.0→1.4.0 update
+with refreshed version/notification, and a blocked pending 1.5.0. Real read-only
+discovery also verified public tag v1.3.0 and its CDN manifest/signature with the pinned
+key; ZIP download/application was not performed by that check. Full Windows behavior
+still needs the VM checklist in [windows-vm.md](windows-vm.md).

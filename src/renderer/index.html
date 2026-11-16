@@ -18,12 +18,12 @@
       <button data-page="admins" data-i18n="navAdmins">♙  Web administrators</button>
       <button data-page="backup" data-i18n="navBackup">▤  Backup</button>
       <button data-page="updates" data-i18n="navUpdates">↑  Updates</button>
-      <button data-page="settings" data-i18n="navSettings">⚙  Release settings</button>
     </nav>
     <p class="aside-note" data-i18n="asideNote">The Linux stack runs independently of the control panel.</p>
   </aside>
   <main>
     <header><span class="eyebrow">INTERWEB / MUONLINE WEB</span><div class="header-tools"><label class="language-picker"><span data-i18n="language">Language</span><select id="language" aria-label="Language"><option value="en">English</option><option value="bg">Български</option></select></label><span class="badge" id="activity">Ready</span></div></header>
+    <button id="updateNotice" type="button" class="update-notice" hidden></button>
     <div id="content"></div>
     <section class="console" data-i18n-label="operationResult" aria-label="Operation result"><div class="console-heading"><span data-i18n="operations">OPERATIONS</span> <span id="operation"></span></div><pre id="output" aria-live="polite">Welcome. Start by checking prerequisites and signed releases.</pre></section>
   </main>

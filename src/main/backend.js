@@ -2,7 +2,7 @@ import { readFile, writeFile, rename, mkdir, mkdtemp, rm } from 'node:fs/promise
 import path from 'node:path';
 import os from 'node:os';
 import { execute, launchDetached } from './process.js';
-import { DEFAULT_CDN, DEFAULT_CHANNEL, MANAGER_VERSION, checkRelease, downloadRelease, newer } from './releases.js';
+import { DEFAULT_CDN, DEFAULT_CHANNEL, DEFAULT_REPOSITORY, MANAGER_VERSION, checkRelease, discoverWebRelease, downloadRelease, newer } from './releases.js';
 
 import { languages, resolveLocale } from '../shared/i18n.js';
 
@@ -17,7 +17,7 @@ export class Backend {
     this.userData = userData;
     this.trustFile = trustFile;
     this.language = resolveLocale(defaultLanguage);
-    this.settings = { cdn: DEFAULT_CDN, webChannel: DEFAULT_CHANNEL, managerChannel: 'muonline-web/manager/stable' };
+    this.settings = { cdn: DEFAULT_CDN, webChannel: DEFAULT_CHANNEL, managerChannel: 'muonline-web/manager/stable', githubRepository: DEFAULT_REPOSITORY };
     this.webRelease = null;
     this.managerRelease = null;
     this.busy = false;
@@ -51,7 +51,14 @@ export class Backend {
     if (url.protocol !== 'https:' || url.username || url.password || url.hash || url.search) {
       throw new Error('CDN must use HTTPS without credentials.');
     }
-    for (const prefix of [result.webChannel, result.managerChannel]) {
+    if (result.webChannel === 'muonline-web/releases/v1.3.0') {
+      result.webChannel = DEFAULT_CHANNEL;
+    }
+    result.githubRepository = input.githubRepository ?? DEFAULT_REPOSITORY;
+    if (!/^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(result.githubRepository) || result.githubRepository.includes('..')) {
+      throw new Error('Invalid GitHub repository.');
+    }
+    for (const prefix of [result.webChannel.replaceAll('{version}', '1.0.0'), result.managerChannel]) {
       if (!/^[a-zA-Z0-9/_.-]+$/.test(prefix) || prefix.includes('..')) {
         throw new Error('Invalid release channel prefix.');
       }
@@ -137,27 +144,62 @@ export class Backend {
     await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '-'], script, 60000);
   }
 
-  /** Check separate web and manager feeds; never download or apply automatically. */
-  async updates() {
-    const results = {};
-    for (const kind of ['web', 'manager']) {
-      try {
-        const manifest = await checkRelease(this.settings, this.trust, kind);
-        this[kind + 'Release'] = manifest;
-        results[kind] = { version: manifest.version, profiles: manifest.profiles ?? [], available: kind === 'manager' ? newer(manifest.version, MANAGER_VERSION) : true };
-      } catch (error) {
-        this[kind + 'Release'] = null;
-        results[kind] = { error: error.message };
+  /** Inspect the persisted WSL version; never invent an installed version in preview mode. */
+  async installedApplication() {
+    if (process.platform !== 'win32') {
+      return { known: false, version: null };
+    }
+    try {
+      const state = await this.runtime({ action: 'status' });
+      return { known: true, version: state.installed ? state.version : null, phase: state.phase };
+    } catch (error) {
+      return { known: false, version: null, error: error.message };
+    }
+  }
+
+  /** Refresh the latest tag and signed manifest without downloading or applying code. */
+  async refreshWebRelease() {
+    this.webRelease = null;
+    const installed = await this.installedApplication();
+    try {
+      const result = await discoverWebRelease(this.settings, this.trust);
+      const common = { latestVersion: result.latest.version, installedVersion: installed.version, installationKnown: installed.known, statusError: installed.error, newTag: installed.known && installed.version !== null && newer(result.latest.version, installed.version) };
+      if (!result.manifest) {
+        return { ...common, available: false, ready: false, error: result.error };
       }
+      this.webRelease = result.manifest;
+      return { ...common, version: result.manifest.version, profiles: result.manifest.profiles, ready: true, available: installed.known && installed.phase === 'ready' && installed.version !== null && newer(result.manifest.version, installed.version) };
+    } catch (error) {
+      return { installedVersion: installed.version, installationKnown: installed.known, ready: false, available: false, error: error.message };
+    }
+  }
+
+  /** Check independent application/manager versions; applying updates always needs a button. */
+  async updates() {
+    const results = { web: await this.refreshWebRelease() };
+    try {
+      const manifest = await checkRelease(this.settings, this.trust, 'manager');
+      this.managerRelease = manifest;
+      results.manager = { version: manifest.version, available: newer(manifest.version, MANAGER_VERSION), ready: true };
+    } catch (error) {
+      this.managerRelease = null;
+      results.manager = { available: false, ready: false, error: error.message };
     }
     return results;
   }
 
   /** Download authenticated artifacts, translate fixed local paths, and clean desktop staging afterward. */
   async deploy(action, input) {
+    const candidate = await this.refreshWebRelease();
     const manifest = this.webRelease;
-    if (!manifest) {
-      throw new Error('Check the signed web release feed before installing or updating.');
+    if (!manifest || !candidate.ready) {
+      throw new Error(candidate.error ?? 'Latest application release is not ready for installation.');
+    }
+    if (action === 'update' && !candidate.installationKnown) {
+      throw new Error('Installed application version could not be determined.');
+    }
+    if (action === 'update' && !candidate.available) {
+      throw new Error('No newer application version is available.');
     }
     await this.prerequisites();
     await this.ensureKeepalive();
@@ -205,7 +247,7 @@ export class Backend {
           this.language = input.language;
           return { language: this.language };
         case 'saveSettings': {
-          const settings = this.validateSettings(input);
+          const settings = this.validateSettings({ ...this.settings, ...input });
           await this.savePreferences(settings);
           this.settings = settings;
           this.webRelease = null;

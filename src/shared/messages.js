@@ -82,7 +82,16 @@ const bulgarian = {
   "IPC payload exceeds limit.": "IPC заявката надвишава допустимия размер.",
   "External link is not allowed.": "Външният линк не е разрешен.",
   "fetch failed": "Свързването с release сървъра е неуспешно.",
-  "The operation was aborted due to timeout": "Операцията е прекратена поради изтекло време."
+  "The operation was aborted due to timeout": "Операцията е прекратена поради изтекло време.",
+  "Invalid GitHub repository.": "Невалидно GitHub repository.",
+  "Invalid GitHub tag response.": "GitHub върна невалиден списък с версии.",
+  "No stable application tag is available.": "Няма публикуван стабилен таг на приложението.",
+  "GitHub tag list exceeds the discovery limit.": "Списъкът с GitHub тагове надвишава допустимия размер за проверка.",
+  "Signed release version does not match the latest GitHub tag.": "Версията на подписания пакет не съвпада с последния GitHub таг.",
+  "A stable application version is required.": "Нужна е стабилна версия на приложението.",
+  "Latest application release is not ready for installation.": "Последната версия още не е готова за инсталиране.",
+  "Installed application version could not be determined.": "Инсталираната версия не може да бъде определена.",
+  "No newer application version is available.": "Няма по-нова версия на приложението."
 };
 
 const prefixes = [
@@ -115,6 +124,10 @@ export function translateMessage(locale, message) {
   let match = /^Release endpoint returned HTTP (\d+)\. Artifacts may not be published yet\.$/.exec(message);
   if (match) {
     return 'Release сървърът върна HTTP ' + match[1] + '. Артефактите може още да не са публикувани.';
+  }
+  match = /^GitHub tag check failed: HTTP (\d+)$/.exec(message);
+  if (match) {
+    return 'Проверката за нова версия в GitHub е неуспешна: HTTP ' + match[1];
   }
   match = /^Artifact download failed: HTTP (\d+)$/.exec(message);
   if (match) {

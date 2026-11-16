@@ -21,7 +21,7 @@ test('runtime input cannot replace the allow-listed operation', async () => {
 });
 test('release feed settings contain no credential storage fields', () => {
   const backend = new Backend('/unused', '/unused');
-  assert.deepEqual(backend.validateSettings({ cdn: 'https://cdn.example', webChannel: 'web/stable', managerChannel: 'manager/stable', sqlPassword: 'secret' }), { cdn: 'https://cdn.example', webChannel: 'web/stable', managerChannel: 'manager/stable' });
+  assert.deepEqual(backend.validateSettings({ cdn: 'https://cdn.example', webChannel: 'web/stable', managerChannel: 'manager/stable', sqlPassword: 'secret' }), { cdn: 'https://cdn.example', webChannel: 'web/stable', managerChannel: 'manager/stable', githubRepository: 'iwebbg/muonline-web-laravel' });
   for (const cdn of ['http://cdn.example', 'https://name:password@cdn.example', 'https://cdn.example?secret=x']) {
     assert.throws(() => backend.validateSettings({ cdn, webChannel: 'web/stable', managerChannel: 'manager/stable' }));
   }
@@ -31,6 +31,7 @@ test('deploy input cannot replace authenticated metadata, archive paths or selec
   const backend = new Backend('/unused', '/unused');
   const authenticated = { version: '1.3.0', artifacts: {} };
   backend.webRelease = authenticated;
+  backend.refreshWebRelease = async () => { backend.webRelease = authenticated; return { ready: true }; };
   backend.prerequisites = async () => true;
   backend.ensureKeepalive = async () => {};
   let received;

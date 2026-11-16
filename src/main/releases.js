@@ -7,7 +7,8 @@ import path from 'node:path';
 
 export const MANAGER_VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version;
 export const DEFAULT_CDN = 'https://cdn.interweb.bg';
-export const DEFAULT_CHANNEL = 'muonline-web/releases/v1.3.0';
+export const DEFAULT_CHANNEL = 'muonline-web/releases/v{version}';
+export const DEFAULT_REPOSITORY = 'iwebbg/muonline-web-laravel';
 
 /** Require an HTTPS origin/path without embedded authentication or query parameters. */
 export function httpsUrl(value) {
@@ -27,6 +28,67 @@ export function newer(version, installed) {
   const left = version.split('.').map(Number);
   const right = installed.split('.').map(Number);
   return left[0] > right[0] || (left[0] === right[0] && (left[1] > right[1] || (left[1] === right[1] && left[2] > right[2])));
+}
+
+/** Accept stable SemVer tags with or without a leading v; ignore prereleases. */
+export function versionFromTag(tag) {
+  if (typeof tag !== 'string') {
+    return null;
+  }
+  const match = /^v?((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/.exec(tag);
+  if (!match || match[1].split('.').some(part => !Number.isSafeInteger(Number(part)))) {
+    return null;
+  }
+  return match[1];
+}
+
+/** Discover the highest stable GitHub tag without relying on API ordering or tag dates. */
+export async function latestGithubTag(repository = DEFAULT_REPOSITORY) {
+  if (!/^[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(repository) || repository.includes('..')) {
+    throw new Error('Invalid GitHub repository.');
+  }
+  let latest = null;
+  for (let page = 1; page <= 10; page++) {
+    const response = await fetch('https://api.github.com/repos/' + repository + '/tags?per_page=100&page=' + page, {
+      headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2026-03-10', 'User-Agent': 'MuOnline-Web-Manager' },
+      redirect: 'error',
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!response.ok) {
+      throw new Error('GitHub tag check failed: HTTP ' + response.status);
+    }
+    const tags = JSON.parse((await readBoundedBody(response, 1024 * 1024)).toString('utf8'));
+    if (!Array.isArray(tags) || tags.length > 100 || tags.some(tag => !tag || typeof tag.name !== 'string')) {
+      throw new Error('Invalid GitHub tag response.');
+    }
+    for (const tag of tags) {
+      const version = versionFromTag(tag.name);
+      if (version && (!latest || newer(version, latest.version))) {
+        latest = { tag: tag.name, version };
+      }
+    }
+    if (tags.length < 100) {
+      if (!latest) {
+        throw new Error('No stable application tag is available.');
+      }
+      return latest;
+    }
+  }
+  throw new Error('GitHub tag list exceeds the discovery limit.');
+}
+
+/** Resolve only the newest tagged application and require the matching signed runtime. */
+export async function discoverWebRelease(settings, trust) {
+  const latest = await latestGithubTag(settings.githubRepository ?? DEFAULT_REPOSITORY);
+  try {
+    const manifest = await checkRelease(settings, trust, 'web', latest.version);
+    if (manifest.version !== latest.version) {
+      throw new Error('Signed release version does not match the latest GitHub tag.');
+    }
+    return { latest, manifest };
+  } catch (error) {
+    return { latest, error: error.message };
+  }
 }
 
 /** Authenticate the exact manifest bytes using a build-pinned Ed25519 key before parsing. */
@@ -66,6 +128,11 @@ async function fetchBounded(url, maximum) {
   if (!response.ok) {
     throw new Error('Release endpoint returned HTTP ' + response.status + '. Artifacts may not be published yet.');
   }
+  return readBoundedBody(response, maximum);
+}
+
+/** Bound JSON metadata before parsing it, including chunked responses. */
+async function readBoundedBody(response, maximum) {
   const chunks = [];
   let size = 0;
   for await (const chunk of response.body) {
@@ -79,9 +146,15 @@ async function fetchBounded(url, maximum) {
 }
 
 /** Resolve a configurable feed and fetch its detached signature. */
-export async function checkRelease(settings, trust, kind = 'web') {
+export async function checkRelease(settings, trust, kind = 'web', version = null) {
   const base = httpsUrl(settings.cdn).href.replace(/\/$/, '');
-  const prefix = kind === 'web' ? settings.webChannel : settings.managerChannel;
+  let prefix = kind === 'web' ? settings.webChannel : settings.managerChannel;
+  if (kind === 'web' && prefix.includes('{version}')) {
+    if (versionFromTag(version) !== version) {
+      throw new Error('A stable application version is required.');
+    }
+    prefix = prefix.replaceAll('{version}', version);
+  }
   if (!/^[a-zA-Z0-9/_-]+(?:\.[a-zA-Z0-9/_-]+)*$/.test(prefix) || prefix.includes('..')) {
     throw new Error('Invalid release prefix.');
   }

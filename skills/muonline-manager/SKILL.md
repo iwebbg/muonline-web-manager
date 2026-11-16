@@ -26,7 +26,14 @@ can be automatic; SQL migrations cannot be presumed reversible. Preserve APP_KEY
 .env, uploaded data and modified/custom themes. Do not overwrite stock theme fixes
 with unchanged old templates during updates.
 
-For checks, use `npm test`; the Electron smoke test also captures all seven pages.
+For checks, use `npm test`; the Electron smoke test also captures all panel pages.
 Use `scripts/test-laravel-contract.py` only with a disposable network-isolated test
 image. Production runtime packaging uses a clean Git snapshot by default and leaves
 local Laravel edits untouched. Never infer a successful upload from local artifacts.
+
+Application discovery uses the public Laravel GitHub tags API, with signatures checked
+against the matching CDN runtime. A new tag alone never authorizes a source ZIP or
+an unsigned install. Install chooses the newest stable tag afresh; never silently fall
+back when that tag lacks signed artifacts. Installed versions come from private WSL
+state and advance only after successful provisioning/update. Keep version prefixes
+and trust setup out of ordinary user flows.

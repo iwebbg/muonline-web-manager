@@ -3,3 +3,5 @@
 .status-detail{white-space:pre-line}
 
 .header-tools{display:flex;align-items:center;gap:18px}.language-picker{display:flex;align-items:center;gap:8px;margin:0;font-size:11px}.language-picker select{width:120px;padding:7px 10px;font-size:12px}.console-heading [data-i18n]{float:none;letter-spacing:2px}
+
+.update-notice{width:100%;margin:0 0 24px;text-align:left;border-color:#bd9355;color:#efcf98}.update-notice[hidden]{display:none}.advanced{margin-top:24px}.advanced summary{cursor:pointer;color:#9eb0c9}.advanced form{border:0;padding:12px 0 0}#webFeed,#managerFeed{white-space:pre-line}

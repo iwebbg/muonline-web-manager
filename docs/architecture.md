@@ -111,3 +111,20 @@ their original text. Browser form validation messages are localized as well.
 NSIS provides a separate English/Bulgarian installer language selector. Custom
 welcome/support pages and missing upstream Bulgarian installer messages are translated
 in build/installer*.nsh. Installer language and the saved panel preference are separate.
+
+## Application version discovery
+
+`latestGithubTag` reads the public GitHub tags API, accepts stable `vX.Y.Z`/`X.Y.Z`,
+scans pagination and chooses the numeric highest version. `discoverWebRelease` then
+authenticates only that version's CDN manifest/signature. GitHub is an announcement
+source; it is not a trust key or a source archive download endpoint. A missing latest
+runtime never causes installation of an older tag.
+
+Main reads the installed application version/phase from WSL, compares it to the signed
+latest version, and reports availability separately from a merely discovered tag.
+Install discovers afresh without requiring a prior manual feed check. Update also
+checks afresh; successful runtime provisioning persists version state before returning
+success. The renderer refreshes status and availability after installation/update.
+The Updates screen has a notification and version summary; source prefixes/key names
+are not part of normal user setup. Manager updates continue to use their independent
+signed feed. CDN override is retained under advanced settings.
