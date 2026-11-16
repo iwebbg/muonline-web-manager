@@ -27,12 +27,17 @@
   "build": {
     "appId": "bg.interweb.muonline.manager",
     "productName": "MuOnline Web Manager",
+    "icon": "icon.png",
     "asar": true,
     "files": [
       "src/**/*",
       "package.json"
     ],
     "extraResources": [
+      {
+        "from": "icon.png",
+        "to": "icon.png"
+      },
       {
         "from": "runtime",
         "to": "runtime",
@@ -55,6 +60,7 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
       "include": "build/installer.nsh",
       "deleteAppDataOnUninstall": false,
       "installerLanguages": [

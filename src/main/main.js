@@ -7,6 +7,10 @@ import { resolveLocale, translate } from '../shared/i18n.js';
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const renderer = path.resolve(directory, '../renderer/index.html');
 const rendererUrl = pathToFileURL(renderer).href;
+const icon = app.isPackaged ? path.join(process.resourcesPath, 'icon.png') : path.resolve(directory, '../../icon.png');
+if (process.platform === 'win32') {
+  app.setAppUserModelId('bg.interweb.muonline.manager');
+}
 const links = new Set(['https://buymeacoffee.com/interweb.bg', 'https://ko-fi.com/interwebltd', 'https://paypal.me/interwebltd']);
 let window;
 let backend;
@@ -40,7 +44,7 @@ function validateSender(event, input) {
 
 /** Open the persistent panel with a sandboxed renderer and a minimal preload bridge. */
 function createWindow() {
-  window = new BrowserWindow({ width: 1240, height: 900, minWidth: 950, minHeight: 700, backgroundColor: '#0c1423', webPreferences: { preload: path.join(directory, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, devTools: !app.isPackaged } });
+  window = new BrowserWindow({ width: 1240, height: 900, minWidth: 950, minHeight: 700, icon, backgroundColor: '#0c1423', webPreferences: { preload: path.join(directory, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, devTools: !app.isPackaged } });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.on('close', event => {

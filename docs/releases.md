@@ -140,3 +140,13 @@ The web release workflow accepts a Laravel ref/version, exports runtime artifact
 and signs only if an operator configured `RELEASE_PRIVATE_KEY` and `RELEASE_KEY_ID`.
 A private sibling repository needs `LARAVEL_READ_TOKEN`. Without a signer the workflow
 produces clearly unsigned preparation artifacts, which the manager refuses to install.
+
+## Desktop application icon
+
+The root `icon.png` is the source for electron-builder's executable/installer and
+shortcut icon. Windows builds convert this PNG to ICO automatically. NSIS creates a
+desktop shortcut; the main window uses the same PNG from packaged resources, and its
+Windows AppUserModelID matches `build.appId` for taskbar grouping. Development uses
+the root image directly. Rebuild/reinstall the Windows package after changing it;
+Windows may retain cached icons for existing pinned shortcuts. Actual Explorer and
+taskbar rendering must be checked in the Windows VM.
