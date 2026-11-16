@@ -1,0 +1,54 @@
+name: Package web runtime
+on:
+  workflow_dispatch:
+    inputs:
+      laravel_ref:
+        description: Trusted Laravel commit SHA or tag
+        required: true
+      version:
+        description: Stable application version (for example 1.3.0)
+        required: true
+        default: '1.3.0'
+      cdn:
+        description: Public CDN base without bucket name
+        default: https://cdn.interweb.bg
+        required: true
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: iwebbg/muonline-web-laravel
+          ref: ${{ inputs.laravel_ref }}
+          path: .release-work/laravel
+          # For a private sibling repo provide a read-only token; github.token cannot cross repositories.
+          token: ${{ secrets.LARAVEL_READ_TOKEN || github.token }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build production runtime and package
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          CDN_BASE: ${{ inputs.cdn }}
+        run: python3 scripts/package-release.py --source .release-work/laravel --version "$RELEASE_VERSION" --cdn "$CDN_BASE"
+      - name: Sign when operator key is configured
+        env:
+          RELEASE_PRIVATE_KEY: ${{ secrets.RELEASE_PRIVATE_KEY }}
+          RELEASE_KEY_ID: ${{ vars.RELEASE_KEY_ID }}
+        run: |
+          if [ -n "$RELEASE_PRIVATE_KEY" ]; then
+            umask 077
+            export RELEASE_SIGNING_KEY_FILE="$RUNNER_TEMP/release-private.pem"
+            trap 'rm -f "$RELEASE_SIGNING_KEY_FILE"' EXIT
+            printf '%s' "$RELEASE_PRIVATE_KEY" > "$RELEASE_SIGNING_KEY_FILE"
+            node scripts/sign-manifest.js artifacts/web/manifest.json
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-runtime-${{ inputs.version }}
+          path: artifacts/web/*
+          if-no-files-found: error

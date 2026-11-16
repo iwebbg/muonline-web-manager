@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="bg">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+  <title>MuOnline Web Manager</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside>
+    <div class="brand"><span class="mark">MU</span><strong>MuOnline <small>WEB MANAGER</small></strong></div>
+    <div class="workspace">WINDOWS / WSL2</div>
+    <nav aria-label="Основна навигация">
+      <button data-page="overview" class="selected">◎ &nbsp; Контролен панел</button>
+      <button data-page="install">↳ &nbsp; Първа инсталация</button>
+      <button data-page="access">◈ &nbsp; Достъп и SSL</button>
+      <button data-page="admins">♙ &nbsp; Web администратори</button>
+      <button data-page="backup">▤ &nbsp; Backup</button>
+      <button data-page="updates">↑ &nbsp; Updates</button>
+      <button data-page="settings">⚙ &nbsp; Release настройки</button>
+    </nav>
+    <p class="aside-note">Linux стекът работи независимо от контролния панел.</p>
+  </aside>
+  <main>
+    <header><span class="eyebrow">INTERWEB / MUONLINE WEB</span><span class="badge" id="activity">Готов за проверка</span></header>
+    <div id="content"></div>
+    <section class="console" aria-label="Резултат от операцията"><div class="console-heading">ОПЕРАЦИИ <span id="operation"></span></div><pre id="output" aria-live="polite">Добре дошли. Започнете с проверка на зависимостите и подписаните releases.</pre></section>
+  </main>
+  <footer><strong>Подкрепете MuOnline Web</strong><span>Разработката продължава с вашата подкрепа.</span><a href="https://buymeacoffee.com/interweb.bg">Buy Me a Coffee ↗</a><a href="https://ko-fi.com/interwebltd">Ko-fi ↗</a><a href="https://paypal.me/interwebltd">PayPal ↗</a></footer>
+  <script src="app.js"></script>
+</body>
+</html>

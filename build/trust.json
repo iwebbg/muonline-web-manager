@@ -1,0 +1,4 @@
+{
+  "keys": {},
+  "note": "Release builds must pin an operator-owned Ed25519 PUBLIC key here. Empty trust refuses all releases. Never put a private key in this file."
+}

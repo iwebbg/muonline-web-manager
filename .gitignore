@@ -1,0 +1,9 @@
+node_modules/
+.release-work/
+dist/
+artifacts/
+__pycache__/
+*.pyc
+.env
+*.private.pem
+*.pfx

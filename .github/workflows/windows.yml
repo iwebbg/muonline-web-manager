@@ -1,0 +1,42 @@
+name: Windows manager
+on:
+  push:
+    paths-ignore: ['docs/**', '*.md', 'skills/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm run test:node
+      - run: npm run test:python
+      - name: Pin release trust keys when configured
+        shell: pwsh
+        env:
+          RELEASE_TRUST_JSON: ${{ vars.RELEASE_TRUST_JSON }}
+        run: |
+          if ($env:RELEASE_TRUST_JSON) {
+            $env:RELEASE_TRUST_JSON | Set-Content -Encoding utf8NoBOM build/trust.json
+          }
+      - name: Build review installer (never publish)
+        run: npm run dist:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-manager-review
+          path: |
+            dist/*.exe
+            dist/*.blockmap
+          if-no-files-found: error

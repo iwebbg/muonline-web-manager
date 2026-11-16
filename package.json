@@ -1,0 +1,54 @@
+{
+  "name": "muonline-web-manager",
+  "version": "0.1.0",
+  "description": "Windows WSL2 control panel for MuOnline Web",
+  "author": "InterWeb",
+  "private": true,
+  "type": "module",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "npm run test:node && python3 -m unittest discover -s tests -p 'test_*.py'",
+    "test:node": "node --test --test-isolation=none tests/*.test.js",
+    "test:python": "python -m unittest discover -s tests -p test_*.py",
+    "dist:win": "electron-builder --win nsis --x64 --publish never",
+    "release:web": "python3 scripts/package-release.py"
+  },
+  "devDependencies": {
+    "electron": "45.3.3",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "bg.interweb.muonline.manager",
+    "productName": "MuOnline Web Manager",
+    "asar": true,
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "runtime",
+        "to": "runtime"
+      },
+      {
+        "from": "build/trust.json",
+        "to": "trust.json"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "MuOnline-Web-Manager-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "overrides": {
+    "minimatch": "11.0.1"
+  }
+}
