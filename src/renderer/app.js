@@ -1,6 +1,7 @@
 import { resolveLocale, translate } from '../shared/i18n.js';
 import { translateMessage } from '../shared/messages.js';
 import { sqlPage, populateSql, bindSql, sqlInput } from './sql/view.js';
+import { supportPage } from './support/view.js';
 
 const content = document.querySelector('#content');
 const output = document.querySelector('#output');
@@ -22,6 +23,7 @@ function t(key, values = {}) {
 /** Translate the fixed shell without exposing remote strings as HTML. */
 function translateShell() {
   document.documentElement.lang = language;
+  document.querySelector('#copyrightYear').textContent = new Date().getFullYear();
   document.querySelectorAll('[data-i18n]').forEach(element => {
     element.textContent = t(element.dataset.i18n);
   });
@@ -108,7 +110,8 @@ function render() {
   document.querySelectorAll('[data-page]').forEach(button => button.classList.toggle('selected', button.dataset.page === page));
   const pages = {
     sql: sqlPage(t),
-    overview: `<h1>${t('overviewTitle')}</h1><p class="lead">${t('overviewLead')}</p><div class="cards"><div class="card"><small>${t('webApplicationLabel')}</small><strong id="webVersion">${t('unchecked')}</strong><p>${t('webVersionHint')}</p></div><div class="card"><small>${t('accessLabel')}</small><strong id="accessMode">${t('unchecked')}</strong><p id="siteUrl">localhost / IP / Domain + SSL</p></div><div class="card"><small>${t('managerLabel')}</small><strong id="managerVersion">0.1.0</strong><p>Electron · WSL2 · Docker Engine</p></div></div><div class="panel"><h2>${t('servicesTitle')}</h2><div id="statusDetail" class="status-detail">${t('noRuntimeStatus')}</div><div class="actions"><button data-action="status">${t('checkStatus')}</button><button data-action="start" class="primary">${t('start')}</button><button data-action="stop">${t('stop')}</button><button data-action="restart">${t('restart')}</button><button data-action="logs">${t('logs')}</button><button data-action="doctor">${t('doctor')}</button></div></div><div class="hint">${t('lifecycleBefore')}<code>wsl --shutdown</code>${t('lifecycleAfter')}</div>`,
+    support: supportPage(t),
+    overview: `<h1>${t('overviewTitle')}</h1><p class="lead">${t('overviewLead')}</p><div class="cards"><div class="card"><small>${t('webApplicationLabel')}</small><strong id="webVersion">${t('unchecked')}</strong><p>${t('webVersionHint')}</p></div><div class="card"><small>${t('accessLabel')}</small><strong id="accessMode">${t('unchecked')}</strong><p id="siteUrl">localhost / IP / Domain + SSL</p></div><div class="card"><small>${t('managerLabel')}</small><strong id="managerVersion">0.1.0</strong><p>${t('managerDescription')}</p></div></div><div class="panel"><h2>${t('servicesTitle')}</h2><div id="statusDetail" class="status-detail">${t('noRuntimeStatus')}</div><div class="actions"><button data-action="status">${t('checkStatus')}</button><button data-action="start" class="primary">${t('start')}</button><button data-action="stop">${t('stop')}</button><button data-action="restart">${t('restart')}</button><button data-action="logs">${t('logs')}</button><button data-action="doctor">${t('doctor')}</button></div></div><div class="hint">${t('lifecycleHint')}</div>`,
     install: `<h1>${t('installTitle')}</h1><p class="lead">${t('installLead')}</p><div class="actions"><button data-action="prerequisites">${t('prerequisites')}</button><button data-action="installWsl">${t('installWsl')}</button><button data-action="installDocker">${t('installDocker')}</button><button type="button" id="openSqlTroubleshooting">${t('sql.title')}</button></div><div class="warning">${t('dockerWarning')}</div><p id="installRelease" class="hint"></p><form id="installForm"><h2>${t('sqlTitle')}</h2><div class="grid"><label>${t('sqlHost')}<input name="sqlHost" required placeholder="192.168.1.10"></label><label>${t('sqlPort')}<input name="sqlPort" type="number" min="1" max="65535" value="1433" required></label><label>${t('sqlAdmin')}<input name="sqlAdmin" value="sa" required autocomplete="off"></label><label>${t('sqlPassword')}<input name="sqlPassword" type="password" required autocomplete="off"></label><label>${t('profile')}<select name="profile" id="profiles" required></select></label><label>${t('appEnv')}<select name="appEnv"><option value="local">local</option><option value="production">production</option></select></label><label>${t('gameDatabase')}<input name="gameDatabase" value="MuOnline" required></label><label>${t('webDatabase')}<input name="webDatabase" value="MuOnline_Web" required></label><label>${t('appLogin')}<input name="appLogin" value="muonline_web_app" required></label><label>${t('gameLogin')}<input name="gameLogin" value="muonline_web_user" required></label></div><label class="check"><input name="trustCertificate" type="checkbox">${t('trustCertificate')}</label><p class="hint">${t('passwordHint')}</p><fieldset><legend>${t('access')}</legend>${accessFields()}</fieldset><fieldset><legend>${t('firstAdmin')}</legend>${adminFields()}</fieldset><div class="actions"><button class="primary" type="submit">${t('install')}</button><button type="button" id="resumeInstall">${t('resumeInstall')}</button></div><p class="hint">${t('resumeHint')}</p></form>`,
     access: `<h1>${t('accessTitle')}</h1><p class="lead">${t('accessLead')}</p><form id="accessForm">${accessFields()}<div class="warning">${t('accessWarning')}</div><button class="primary" type="submit">${t('applyAccess')}</button></form>`,
     admins: `<h1>${t('adminsTitle')}</h1><p class="lead">${t('adminsLeadBefore')}<code>admin:create</code>${t('adminsLeadAfter')}</p><form id="adminForm">${adminFields()}<button class="primary" type="submit">${t('createAdmin')}</button></form><p class="hint">${t('adminsHint')}</p>`,
@@ -117,6 +120,7 @@ function render() {
 
   };
   content.innerHTML = pages[page];
+  document.querySelector('.console').hidden = page === 'support';
   populate(true);
   bind();
 }
@@ -328,6 +332,9 @@ function bind() {
   if (page === 'sql') {
     bindSql(t, sqlState, perform);
   }
+  content.querySelectorAll('[data-open-page]').forEach(button => {
+    button.addEventListener('click', () => selectPage(button.dataset.openPage));
+  });
   content.querySelector('#openSqlTroubleshooting')?.addEventListener('click', () => {
     const data = new FormData(content.querySelector('#installForm'));
     sqlState.fields = { host: data.get('sqlHost'), port: data.get('sqlPort'), applicationDatabase: data.get('webDatabase'), gameDatabase: data.get('gameDatabase'), appUsername: data.get('appLogin'), gameUsername: data.get('gameLogin'), adminUsername: data.get('sqlAdmin') };
@@ -394,20 +401,25 @@ document.querySelector('#language').addEventListener('change', event => {
   });
 });
 
+/** Navigate between panel pages; SQL inventory is read only and loaded on demand. */
+function selectPage(nextPage) {
+  page = nextPage;
+  render();
+  if (page === 'sql' && !sqlState.inventory) {
+    perform('sqlInspect', {}, true);
+  }
+}
+
 document.querySelectorAll('[data-page]').forEach(button => {
-  button.addEventListener('click', () => {
-    page = button.dataset.page;
-    render();
-    if (page === 'sql' && !sqlState.inventory) {
-      perform('sqlInspect', {}, true);
-    }
-  });
+  button.addEventListener('click', () => selectPage(button.dataset.page));
 });
-document.querySelectorAll('footer a').forEach(link => {
-  link.addEventListener('click', event => {
+// Delegation also covers support links rendered after navigation or language changes.
+document.addEventListener('click', event => {
+  const link = event.target.closest('a[href]');
+  if (link) {
     event.preventDefault();
-    window.manager?.openLink(link.href);
-  });
+    window.manager?.openLink(link.getAttribute('href'));
+  }
 });
 
 /** Load public configuration and check both feeds automatically without applying updates. */

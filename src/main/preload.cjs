@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('manager', Object.freeze({
     }
     return ipcRenderer.invoke('manager:invoke', action, input);
   },
-  /** Open one of the build-owned donation links through the main process. */
+  /** Open one of the build-owned company, support or donation links through the main process. */
   openLink(target) {
     return ipcRenderer.invoke('manager:link', target);
   }

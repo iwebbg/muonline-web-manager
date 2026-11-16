@@ -156,3 +156,19 @@ No actual Windows service, registry, UAC or firewall operation was exercised loc
 Follow [the SQL module VM checklist](sql-troubleshooting.md#windows-vm-acceptance)
 before approving Windows behavior. Legacy crypto patterns were tested, not an actual
 SQL 2008 R2 handshake. No adapters or sibling Laravel files were changed.
+
+## Branding and Help & Support follow-up — 2026-11-17
+
+The sidebar and header use MuOnline Web / Powered by InterWeb Ltd.; the native title
+is MuOnline Web Manager - Powered by InterWeb Ltd. Platform labels were removed from
+normal overview copy and the sidebar. The lower-left company attribution uses the
+current local year and links to interweb.bg. Required setup and SQL diagnostic facts
+remain available on the relevant operational screens.
+
+The eighth page, Help & Support (EN/BG), follows the Counter-Strike project's support
+layout: GitHub issue/project links for muonline-web-laravel, email contact, guidance
+before reporting, SQL diagnostics navigation and three donation cards. The permanent
+footer remains on every page. Only explicit clicks open the browser/email composer;
+no issue is posted, no email is sent and no credentials are attached automatically.
+External destinations are a fixed main-process allow-list. The smoke test covers both
+languages, those links, title/attribution and sidebar overlap at minimum window size.

@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const assert = require('node:assert/strict');
 
 const operations = [];
+const openedLinks = [];
 let window;
 let language = 'en';
 let installedVersion = '1.3.0';
@@ -51,22 +52,37 @@ async function smoke() {
     };
     return { ok: true, result: results[action] ?? 'Completed test operation' };
   });
-  ipcMain.handle('manager:link', () => {});
+  ipcMain.handle('manager:link', (event, target) => { openedLinks.push(target); });
   window = new BrowserWindow({ show: true, width: 1280, height: 1000, webPreferences: { preload: path.resolve('src/main/preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   await window.loadFile(path.resolve('src/renderer/index.html'));
   await waitUntilReady();
+  assert.equal(window.getTitle(), 'MuOnline Web Manager - Powered by InterWeb Ltd.');
   assert.equal(await window.webContents.executeJavaScript('typeof require'), 'undefined');
   await fs.mkdir('artifacts/review', { recursive: true });
   for (const locale of ['en', 'bg']) {
     await selectLanguage(locale);
-    for (const page of ['overview', 'install', 'access', 'admins', 'sql', 'backup', 'updates']) {
+    for (const page of ['overview', 'install', 'access', 'admins', 'sql', 'backup', 'updates', 'support']) {
       await window.webContents.executeJavaScript(`document.querySelector('[data-page="${page}"]').click()`);
       const state = await window.webContents.executeJavaScript(`({ links: [...document.querySelectorAll('footer a')].map(a => a.href), bottom: document.querySelector('footer').getBoundingClientRect().bottom, height: innerHeight, heading: document.querySelector('h1').textContent, body: document.querySelector('#content').textContent, lang: document.documentElement.lang })`);
       assert.equal(state.links.length, 3);
       assert.ok(state.bottom <= state.height + 1);
       assert.ok(state.heading.length > 0);
       assert.equal(state.lang, locale);
+      assert.equal(await window.webContents.executeJavaScript(`document.querySelector('.workspace')`), null);
+      assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#copyrightYear').textContent`), String(new Date().getFullYear()));
       assert.equal(/[А-Яа-я]/.test(state.body), locale === 'bg', 'Page should be fully translated: ' + page);
+      if (page === 'overview') {
+        assert.ok(!/Linux|WSL|Docker|Electron/.test(state.body), 'Overview should use plain user-facing language');
+      }
+      if (page === 'support') {
+        const linksBefore = openedLinks.length;
+        assert.equal(await window.webContents.executeJavaScript(`document.querySelector('.console').hidden`), true);
+        assert.equal(await window.webContents.executeJavaScript(`document.querySelectorAll('.support-donations a').length`), 3);
+        assert.equal(await window.webContents.executeJavaScript(`document.querySelector('nav button:last-child').dataset.page`), 'support');
+        await window.webContents.executeJavaScript(`document.querySelector('a[href="https://github.com/iwebbg/muonline-web-laravel/issues/new"]').click(); document.querySelector('.aside-note a').click();`);
+        await window.webContents.executeJavaScript(`new Promise(resolve=>setTimeout(resolve,30))`);
+        assert.deepEqual(openedLinks.slice(linksBefore), ['https://github.com/iwebbg/muonline-web-laravel/issues/new', 'https://interweb.bg']);
+      }
       if (page === 'sql') {
         await window.webContents.executeJavaScript(`new Promise(resolve => { const timer=setInterval(()=>{ if(!document.querySelector('#language').disabled){clearInterval(timer);resolve();}},10); })`);
         assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#sqlInstance').value`), 'SQLEXPRESS');
@@ -132,6 +148,11 @@ async function smoke() {
   await window.webContents.executeJavaScript(`new Promise(resolve => { const interval = setInterval(() => { if (!document.querySelector('#language').disabled && document.querySelector('#webFeed').textContent.includes('1.5.0')) { clearInterval(interval); resolve(); } }, 10); })`);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#updateForm button').disabled`), true);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#updateNotice').hidden`), false);
-  console.log('PASS: all seven pages in EN/BG, SQL diagnostic evidence and explicit change confirmation, persistent language, preserved unsent fields, permanent donate footer, sandbox bridge, administrator form, password cleanup and check-only updates. Screenshots: artifacts/review/.');
+  await window.webContents.executeJavaScript(`document.querySelector('[data-page="support"]').click(); document.querySelector('[data-open-page="sql"]').click();`);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('nav .selected').dataset.page`), 'sql');
+  window.setSize(950, 700);
+  await window.webContents.executeJavaScript(`new Promise(resolve=>setTimeout(resolve,100))`);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('nav button:last-child').getBoundingClientRect().bottom <= document.querySelector('.aside-note').getBoundingClientRect().top`), true, 'Support navigation must not overlap company attribution at minimum window size');
+  console.log('PASS: all eight pages in EN/BG, support/company links, branding and compact navigation, SQL diagnostic evidence and explicit change confirmation, persistent language, preserved unsent fields, permanent donate footer, sandbox bridge, administrator form, password cleanup and check-only updates. Screenshots: artifacts/review/.');
 }
 app.whenReady().then(smoke).then(() => { clearTimeout(timer); app.exit(0); }).catch(error => { clearTimeout(timer); console.error(error); app.exit(1); });

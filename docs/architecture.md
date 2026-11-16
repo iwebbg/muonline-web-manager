@@ -11,7 +11,9 @@ SQL databases, WSL site data, certificates, backups or the keepalive task.
 CSP prevents remote scripts, network access, frames and form navigation. Navigation,
 popups and permissions are denied. IPC checks the exact main frame, webContents and
 file URL, bounds payload size, and dispatches an operation allow-list. External links
-are restricted to the three donation URLs.
+are restricted to fixed company, GitHub project/issue, support email and donation
+destinations in `src/shared/links.js`. Opening an issue/email composer never sends
+a report automatically or attaches runtime configuration.
 
 The preload exposes named operations, not a shell, filesystem API or raw ipcRenderer.
 Main invokes `wsl.exe` with fixed argv and sends a packaged Python worker plus JSON

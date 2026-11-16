@@ -4,13 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
-  <title>MuOnline Web Manager</title>
+  <title>MuOnline Web Manager - Powered by InterWeb Ltd.</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <aside>
-    <div class="brand"><span class="mark">MU</span><strong>MuOnline <small>WEB MANAGER</small></strong></div>
-    <div class="workspace">WINDOWS / WSL2</div>
+    <div class="brand"><span class="mark">MU</span><strong>MuOnline Web <small>Powered by InterWeb Ltd.</small></strong></div>
     <nav data-i18n-label="navLabel" aria-label="Main navigation">
       <button data-page="overview" class="selected" data-i18n="navOverview">◎  Control panel</button>
       <button data-page="install" data-i18n="navInstall">↳  First installation</button>
@@ -19,11 +18,12 @@
       <button data-page="sql" data-i18n="navSql">◇  SQL Troubleshooting</button>
       <button data-page="backup" data-i18n="navBackup">▤  Backup</button>
       <button data-page="updates" data-i18n="navUpdates">↑  Updates</button>
+      <button data-page="support" data-i18n="navSupport">?  Help &amp; Support</button>
     </nav>
-    <p class="aside-note" data-i18n="asideNote">The Linux stack runs independently of the control panel.</p>
+    <p class="aside-note">© <span id="copyrightYear"></span> <a href="https://interweb.bg">InterWeb Ltd</a></p>
   </aside>
   <main>
-    <header><span class="eyebrow">INTERWEB / MUONLINE WEB</span><div class="header-tools"><label class="language-picker"><span data-i18n="language">Language</span><select id="language" aria-label="Language"><option value="en">English</option><option value="bg">Български</option></select></label><span class="badge" id="activity">Ready</span></div></header>
+    <header><div class="header-brand"><strong>MuOnline Web</strong><small>Powered by InterWeb Ltd.</small></div><div class="header-tools"><label class="language-picker"><span data-i18n="language">Language</span><select id="language" aria-label="Language"><option value="en">English</option><option value="bg">Български</option></select></label><span class="badge" id="activity">Ready</span></div></header>
     <button id="updateNotice" type="button" class="update-notice" hidden></button>
     <div id="content"></div>
     <section class="console" data-i18n-label="operationResult" aria-label="Operation result"><div class="console-heading"><span data-i18n="operations">OPERATIONS</span> <span id="operation"></span></div><pre id="output" aria-live="polite">Welcome. Start by checking prerequisites and signed releases.</pre></section>

@@ -5,6 +5,8 @@ Web Laravel stack. The backend runs in Ubuntu-24.04 / WSL2 with Docker Engine.
 Closing the panel leaves services running; Windows sleep/shutdown stops availability.
 The panel supports English and Bulgarian through the language selector in the header.
 The choice is saved across restarts; NSIS also offers English/Bulgarian selection.
+Help & Support links to the project’s GitHub issue form, email contact and optional
+donations. Reports are prepared by the user; credentials/logs are never attached automatically.
 Installation automatically selects the latest stable Laravel GitHub tag and its signed
 CDN runtime. Updates compare that version with the saved installed version and notify
 the user; application changes require an explicit Update button.

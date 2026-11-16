@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, shell, session, dialog, Menu, clipboard } 
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { Backend } from './backend.js';
+import { externalLinks } from '../shared/links.js';
 import { resolveLocale, translate } from '../shared/i18n.js';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
@@ -11,7 +12,7 @@ const icon = app.isPackaged ? path.join(process.resourcesPath, 'icon.png') : pat
 if (process.platform === 'win32') {
   app.setAppUserModelId('bg.interweb.muonline.manager');
 }
-const links = new Set(['https://buymeacoffee.com/interweb.bg', 'https://ko-fi.com/interwebltd', 'https://paypal.me/interwebltd']);
+const links = new Set(Object.values(externalLinks));
 let window;
 let backend;
 let language = 'en';
