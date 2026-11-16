@@ -108,3 +108,15 @@ automatic firewall/NAT changes or automatic database migration rollback.
   and [systemd guidance](https://learn.microsoft.com/en-us/windows/wsl/systemd).
 - The actual Laravel Docker files, docker/install.sh, entrypoint, registry and command
   implementations; notably the interactive admin:create and SQLite-only app:backup.
+
+## EN/BG interface follow-up
+
+English/Bulgarian catalogs, a persistent header selector, localized native menus and
+validation, and bilingual NSIS pages were added after the initial handoff.
+`npm test` now covers 14 Node tests and 15 Python tests. The Electron smoke test covers
+all seven pages in both languages, switching with unsent form values, language after
+reload, localized required-field validation and the permanent donation footer.
+Screenshots use `artifacts/review/<page>-en.png` and `<page>-bg.png`. The bilingual
+NSIS welcome/support macros compile in the native makensis syntax harness. Actual
+Windows installer execution and native Windows dialogs still require Windows CI/VM
+acceptance; this change does not claim those checks passed.

@@ -1,5 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const actions = new Set(['settings', 'saveSettings', 'prerequisites', 'installWsl', 'installDocker', 'updates', 'install', 'update', 'updateManager', 'status', 'start', 'stop', 'restart', 'logs', 'doctor', 'admin', 'access', 'backup', 'resumeInstall']);
+const actions = new Set(['settings', 'setLanguage', 'saveSettings', 'prerequisites', 'installWsl', 'installDocker', 'updates', 'install', 'update', 'updateManager', 'status', 'start', 'stop', 'restart', 'logs', 'doctor', 'admin', 'access', 'backup', 'resumeInstall']);
 contextBridge.exposeInMainWorld('manager', Object.freeze({
   /** Forward only documented operations; the main process validates the sender again. */
   invoke(action, input = {}) {

@@ -55,7 +55,12 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "include": "build/installer.nsh",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "installerLanguages": [
+        "en_US",
+        "bg_BG"
+      ],
+      "displayLanguageSelector": true
     }
   },
   "overrides": {

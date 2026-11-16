@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="bg">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -11,23 +11,23 @@
   <aside>
     <div class="brand"><span class="mark">MU</span><strong>MuOnline <small>WEB MANAGER</small></strong></div>
     <div class="workspace">WINDOWS / WSL2</div>
-    <nav aria-label="Основна навигация">
-      <button data-page="overview" class="selected">◎ &nbsp; Контролен панел</button>
-      <button data-page="install">↳ &nbsp; Първа инсталация</button>
-      <button data-page="access">◈ &nbsp; Достъп и SSL</button>
-      <button data-page="admins">♙ &nbsp; Web администратори</button>
-      <button data-page="backup">▤ &nbsp; Backup</button>
-      <button data-page="updates">↑ &nbsp; Updates</button>
-      <button data-page="settings">⚙ &nbsp; Release настройки</button>
+    <nav data-i18n-label="navLabel" aria-label="Main navigation">
+      <button data-page="overview" class="selected" data-i18n="navOverview">◎  Control panel</button>
+      <button data-page="install" data-i18n="navInstall">↳  First installation</button>
+      <button data-page="access" data-i18n="navAccess">◈  Access and SSL</button>
+      <button data-page="admins" data-i18n="navAdmins">♙  Web administrators</button>
+      <button data-page="backup" data-i18n="navBackup">▤  Backup</button>
+      <button data-page="updates" data-i18n="navUpdates">↑  Updates</button>
+      <button data-page="settings" data-i18n="navSettings">⚙  Release settings</button>
     </nav>
-    <p class="aside-note">Linux стекът работи независимо от контролния панел.</p>
+    <p class="aside-note" data-i18n="asideNote">The Linux stack runs independently of the control panel.</p>
   </aside>
   <main>
-    <header><span class="eyebrow">INTERWEB / MUONLINE WEB</span><span class="badge" id="activity">Готов за проверка</span></header>
+    <header><span class="eyebrow">INTERWEB / MUONLINE WEB</span><div class="header-tools"><label class="language-picker"><span data-i18n="language">Language</span><select id="language" aria-label="Language"><option value="en">English</option><option value="bg">Български</option></select></label><span class="badge" id="activity">Ready</span></div></header>
     <div id="content"></div>
-    <section class="console" aria-label="Резултат от операцията"><div class="console-heading">ОПЕРАЦИИ <span id="operation"></span></div><pre id="output" aria-live="polite">Добре дошли. Започнете с проверка на зависимостите и подписаните releases.</pre></section>
+    <section class="console" data-i18n-label="operationResult" aria-label="Operation result"><div class="console-heading"><span data-i18n="operations">OPERATIONS</span> <span id="operation"></span></div><pre id="output" aria-live="polite">Welcome. Start by checking prerequisites and signed releases.</pre></section>
   </main>
-  <footer><strong>Подкрепете MuOnline Web</strong><span>Разработката продължава с вашата подкрепа.</span><a href="https://buymeacoffee.com/interweb.bg">Buy Me a Coffee ↗</a><a href="https://ko-fi.com/interwebltd">Ko-fi ↗</a><a href="https://paypal.me/interwebltd">PayPal ↗</a></footer>
-  <script src="app.js"></script>
+  <footer><strong data-i18n="donateTitle">Support MuOnline Web</strong><span data-i18n="donateHint">Your support keeps development going.</span><a href="https://buymeacoffee.com/interweb.bg">Buy Me a Coffee ↗</a><a href="https://ko-fi.com/interwebltd">Ko-fi ↗</a><a href="https://paypal.me/interwebltd">PayPal ↗</a></footer>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

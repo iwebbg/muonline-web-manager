@@ -1,3 +1,6 @@
+import { resolveLocale, translate } from '../shared/i18n.js';
+import { translateMessage } from '../shared/messages.js';
+
 const content = document.querySelector('#content');
 const output = document.querySelector('#output');
 let page = 'overview';
@@ -5,41 +8,104 @@ let busy = false;
 let settings = {};
 let feeds = {};
 let status = null;
+let language = resolveLocale(navigator.language);
+let lastOutput = { kind: 'welcome' };
+let lastAction = '';
+
+/** Translate interface strings using the current persisted panel language. */
+function t(key, values = {}) {
+  return translate(language, key, values);
+}
+
+/** Translate the fixed shell without exposing remote strings as HTML. */
+function translateShell() {
+  document.documentElement.lang = language;
+  document.querySelectorAll('[data-i18n]').forEach(element => {
+    element.textContent = t(element.dataset.i18n);
+  });
+  document.querySelectorAll('[data-i18n-label]').forEach(element => {
+    element.setAttribute('aria-label', t(element.dataset.i18nLabel));
+  });
+  document.querySelector('#language').value = language;
+  document.querySelector('#language').setAttribute('aria-label', t('language'));
+  document.querySelector('#activity').textContent = t(busy ? 'running' : 'ready');
+  document.querySelector('#operation').textContent = lastAction ? actionLabel(lastAction) : '';
+}
+
+/** Present operation names without translating the underlying IPC identifiers. */
+function actionLabel(action) {
+  const names = { status: 'checkStatus', admin: 'createAdmin', backup: 'createBackup', update: 'updateWeb', updates: 'checkUpdates', access: 'applyAccess', settings: 'settingsTitle' };
+  return t(names[action] ?? action);
+}
+
+/** Keep technical logs and SQL diagnostics verbatim while translating application messages. */
+function renderOutput() {
+  if (lastOutput.kind === 'welcome') {
+    output.textContent = t('welcome');
+  } else if (lastOutput.kind === 'working') {
+    output.textContent = t('working', { action: actionLabel(lastOutput.action) });
+  } else if (lastOutput.kind === 'error') {
+    output.textContent = translateMessage(language, lastOutput.message);
+  } else {
+    const value = lastOutput.value;
+    output.textContent = typeof value === 'string'
+      ? (lastOutput.action === 'logs' ? value : translateMessage(language, value))
+      : JSON.stringify(value, (key, item) => key === 'error' || key === 'runtimeError' ? translateMessage(language, item) : item, 2);
+  }
+}
+
+/** Change UI language while keeping unsent form values only in memory. */
+function changeLanguage(value) {
+  const fields = [...content.querySelectorAll('input, select')].map(field => ({ name: field.name, value: field.value, checked: field.checked }));
+  language = resolveLocale(value);
+  render();
+  for (const saved of fields) {
+    const field = content.querySelector('[name="' + saved.name + '"]');
+    if (field) {
+      field.value = saved.value;
+      if (field.type === 'checkbox') {
+        field.checked = saved.checked;
+      }
+    }
+  }
+  renderOutput();
+}
 
 /** Generate only static, application-owned access form markup. */
 function accessFields() {
-  return `<div class="grid"><label>Режим на достъп<select name="mode"><option value="local">Local — localhost / тестове</option><option value="ip">IP — HTTP</option><option value="domain">Domain + SSL — препоръчителен production</option></select></label><label>IP адрес или домейн<input name="host" placeholder="mu.example.com"></label><label>ACME email за SSL<input name="acmeEmail" type="email" placeholder="admin@example.com"></label></div><label class="check"><input type="checkbox" name="httpAcknowledged">При IP режим приемам, че HTTP пренася пароли и сесии без криптиране, включително в production.</label>`;
+  return `<div class="grid"><label>${t('accessMode')}<select name="mode"><option value="local">${t('localMode')}</option><option value="ip">${t('ipMode')}</option><option value="domain">${t('domainMode')}</option></select></label><label>${t('accessHost')}<input name="host" placeholder="mu.example.com"></label><label>${t('acmeEmail')}<input name="acmeEmail" type="email" placeholder="admin@example.com"></label></div><label class="check"><input type="checkbox" name="httpAcknowledged">${t('httpWarning')}</label>`;
 }
 
 /** Render the administrator prompts supported by the real Laravel command. */
 function adminFields() {
-  return `<div class="grid"><label>Име на web администратора<input name="adminName" required maxlength="255" autocomplete="off"></label><label>Email<input name="adminEmail" required type="email" autocomplete="off"></label></div><label>Парола (12+ знака, главни/малки букви, цифра и символ)<input name="adminPassword" type="password" required minlength="12" autocomplete="new-password"></label>`;
+  return `<div class="grid"><label>${t('adminName')}<input name="adminName" required maxlength="255" autocomplete="off"></label><label>${t('email')}<input name="adminEmail" required type="email" autocomplete="off"></label></div><label>${t('adminPassword')}<input name="adminPassword" type="password" required minlength="12" autocomplete="new-password"></label>`;
 }
 
 /** Render temporary backup authorization fields, never persisted by the panel. */
 function backupFields() {
-  return `<div class="warning">SQL backups се създават на SQL Server машината. Директорията трябва да съществува и SQL Server service account да има write достъп. Използва се временен SQL login с BACKUP DATABASE и RESTORE VERIFYONLY права.</div><div class="grid"><label>Временен SQL backup login<input name="backupUsername" required autocomplete="off"></label><label>Временна SQL парола<input name="backupPassword" type="password" required autocomplete="off"></label></div><label>Абсолютна директория на SQL Server host<input name="backupDirectory" placeholder="D:\\MuBackups" required></label>`;
+  return `<div class="warning">${t('backupWarning')}</div><div class="grid"><label>${t('backupUsername')}<input name="backupUsername" required autocomplete="off"></label><label>${t('sqlPassword')}<input name="backupPassword" type="password" required autocomplete="off"></label></div><label>${t('backupDirectory')}<input name="backupDirectory" placeholder="D:\\MuBackups" required></label>`;
 }
 
 /** Render the selected page while keeping the donation footer outside page routing. */
 function render() {
+  translateShell();
   document.querySelectorAll('[data-page]').forEach(button => button.classList.toggle('selected', button.dataset.page === page));
   const pages = {
-    overview: `<h1>Вашият MuOnline Web.</h1><p class="lead">Управление на Linux услугите от Windows. Проверете средата, инсталирайте сайта и следете състоянието му от едно място.</p><div class="cards"><div class="card"><small>WEB APPLICATION</small><strong id="webVersion">Непроверено</strong><p>Отделна версия на сайта</p></div><div class="card"><small>ДОСТЪП</small><strong id="accessMode">Непроверено</strong><p id="siteUrl">localhost / IP / Domain + SSL</p></div><div class="card"><small>DESKTOP MANAGER</small><strong id="managerVersion">0.1.0</strong><p>Electron · WSL2 · Docker Engine</p></div></div><div class="panel"><h2>Услуги и диагностика</h2><div id="statusDetail" class="status-detail">Няма проверен runtime статус.</div><div class="actions"><button data-action="status">Провери статус</button><button data-action="start" class="primary">Start</button><button data-action="stop">Stop</button><button data-action="restart">Restart</button><button data-action="logs">Логове</button><button data-action="doctor">SQL диагностика</button></div></div><div class="hint">Затварянето на панела запазва работещите услуги. Sleep, shutdown и <code>wsl --shutdown</code> прекъсват сайта. За публичен достъп са нужни Windows Firewall/NAT настройки.</div>`,
-    install: `<h1>Първа инсталация</h1><p class="lead">Използва се Ubuntu-24.04 във WSL2. Game базата трябва вече да е възстановена в SQL Server. Installer-ът създава отделната web база и restricted runtime logins.</p><div class="actions"><button data-action="prerequisites">Провери зависимостите</button><button data-action="installWsl">Настрой WSL2 (UAC)</button><button data-action="installDocker">Инсталирай Docker Engine</button><button data-action="updates">Провери releases</button></div><div class="warning">Docker setup променя Ubuntu-24.04: добавя официалния Docker APT repository и включва Docker service. Не използвайте тази дистрибуция за несвързани workloads. Възможни са рестарт на Windows и първоначално отваряне на Ubuntu.</div><form id="installForm"><h2>SQL Server и game profile</h2><div class="grid"><label>SQL host/IP (достъпен от WSL)<input name="sqlHost" required placeholder="192.168.1.10"></label><label>SQL TCP port<input name="sqlPort" type="number" min="1" max="65535" value="1433" required></label><label>Временен SQL administrator<input name="sqlAdmin" value="sa" required autocomplete="off"></label><label>Временна SQL парола<input name="sqlPassword" type="password" required autocomplete="off"></label><label>Game adapter/profile от release registry<select name="profile" id="profiles" required></select></label><label>Laravel APP_ENV (отделно от достъпа)<select name="appEnv"><option value="local">local</option><option value="production">production</option></select></label><label>Съществуваща game база<input name="gameDatabase" value="MuOnline" required></label><label>Отделна web база<input name="webDatabase" value="MuOnline_Web" required></label><label>Restricted web SQL login<input name="appLogin" value="muonline_web_app" required></label><label>Restricted game SQL login<input name="gameLogin" value="muonline_web_user" required></label></div><label class="check"><input name="trustCertificate" type="checkbox">Trust SQL Server certificate (само ако приемате риска от непроверен сертификат)</label><p class="hint">Runtime SQL паролите са 32 random bytes като hex + Ss@. APP_KEY се генерира отделно. Game writes остават изключени. Временните SQL credentials не се запазват в runtime конфигурацията.</p><fieldset><legend>Достъп</legend>${accessFields()}</fieldset><fieldset><legend>Първи web администратор</legend>${adminFields()}</fieldset><div class="actions"><button class="primary" type="submit">Инсталирай подписания web release</button><button type="button" id="resumeInstall">Продължи прекъсната инсталация</button></div><p class="hint">При resume се използват запазените SQL настройки, runtime пароли и APP_KEY. От формата се вземат само временните SQL credentials и web администраторът. При вече създаден администратор и неуспешен SSL настройте DNS/Firewall и натиснете resume.</p></form>`,
-    access: `<h1>Достъп и SSL</h1><p class="lead">Сменете режима или домейна без промяна на Laravel APP_ENV. Конфигурацията се архивира преди промяната; неуспешна nginx/ACME проверка задейства възстановяване.</p><form id="accessForm">${accessFields()}<div class="warning">Domain + SSL изисква DNS към тази машина и входящи TCP 80/443 за HTTP-01. Local се bind-ва само към loopback. При IP и Domain трябва да настроите Windows Firewall и NAT отделно.</div><button class="primary" type="submit">Провери и приложи достъпа</button></form>`,
-    admins: `<h1>Web администратори</h1><p class="lead">Създаване чрез съществуващата Laravel команда <code>admin:create</code>. Паролата се предава през private stdin и се изтрива от формата след операцията.</p><form id="adminForm">${adminFields()}<button class="primary" type="submit">Създай администратор</button></form><p class="hint">Текущият Laravel проект няма CLI команди за списък, деактивиране или reset на web администратори. Тези операции са извън наличния CLI договор; не се изпълнява произволен SQL или tinker.</p>`,
-    backup: `<h1>Backup</h1><p class="lead">Native SQL Server COPY_ONLY backups с CHECKSUM и VERIFYONLY за web и game базите, плюс частен архив на приложението, .env, APP_KEY, storage, темите и сертификатите във WSL.</p><form id="backupForm">${backupFields()}<button class="primary" type="submit">Създай и провери backup</button></form><p class="hint">Архивите във WSL не са off-machine backup. Копирайте site архива и SQL .bak файловете на отделно защитено място. Възстановяването на database migrations е ръчно.</p>`,
-    updates: `<h1>Updates</h1><p class="lead">Автоматично се проверяват подписаните release manifests. Изтегляне, backup и промени започват само чрез изричния бутон Update.</p><div class="actions"><button data-action="updates">Провери за updates</button></div><div class="panel"><h2>Desktop manager</h2><p id="managerFeed"></p><button data-action="updateManager">Update manager</button></div><form id="updateForm"><h2>Web приложение</h2><p id="webFeed"></p><p class="hint">Staging → maintenance → SQL и file backup → release switch → migrations → health checks. Запазват се .env, APP_KEY, storage/uploads и потребителските теми.</p>${backupFields()}<label class="check"><input type="checkbox" name="migrationAcknowledged" required>Разбирам, че след започнали migrations няма автоматичен database rollback. При неуспех е нужна ръчна recovery процедура.</label><button class="primary" type="submit">Update web application</button></form>`,
-    settings: `<h1>Release настройки</h1><p class="lead">R2 bucket: <code>marketing</code>. Публичният URL използва alias-а без името на bucket-а. Release файловете трябва да бъдат публикувани отделно.</p><form id="settingsForm"><label>CDN база (HTTPS)<input name="cdn" type="url" required></label><label>Web release prefix<input name="webChannel" required></label><label>Manager release prefix<input name="managerChannel" required></label><p class="hint">Начален web prefix: <code>muonline-web/releases/v1.3.0</code>. За автоматично откриване на бъдещи версии публикувайте подписан feed и задайте неговия prefix. Trust keys са pinned при build и не се приемат от CDN или от тази форма.</p><p id="trustState" class="warning"></p><button class="primary" type="submit">Запази feed настройките</button></form>`
+    overview: `<h1>${t('overviewTitle')}</h1><p class="lead">${t('overviewLead')}</p><div class="cards"><div class="card"><small>${t('webApplicationLabel')}</small><strong id="webVersion">${t('unchecked')}</strong><p>${t('webVersionHint')}</p></div><div class="card"><small>${t('accessLabel')}</small><strong id="accessMode">${t('unchecked')}</strong><p id="siteUrl">localhost / IP / Domain + SSL</p></div><div class="card"><small>${t('managerLabel')}</small><strong id="managerVersion">0.1.0</strong><p>Electron · WSL2 · Docker Engine</p></div></div><div class="panel"><h2>${t('servicesTitle')}</h2><div id="statusDetail" class="status-detail">${t('noRuntimeStatus')}</div><div class="actions"><button data-action="status">${t('checkStatus')}</button><button data-action="start" class="primary">${t('start')}</button><button data-action="stop">${t('stop')}</button><button data-action="restart">${t('restart')}</button><button data-action="logs">${t('logs')}</button><button data-action="doctor">${t('doctor')}</button></div></div><div class="hint">${t('lifecycleBefore')}<code>wsl --shutdown</code>${t('lifecycleAfter')}</div>`,
+    install: `<h1>${t('installTitle')}</h1><p class="lead">${t('installLead')}</p><div class="actions"><button data-action="prerequisites">${t('prerequisites')}</button><button data-action="installWsl">${t('installWsl')}</button><button data-action="installDocker">${t('installDocker')}</button><button data-action="updates">${t('checkReleases')}</button></div><div class="warning">${t('dockerWarning')}</div><form id="installForm"><h2>${t('sqlTitle')}</h2><div class="grid"><label>${t('sqlHost')}<input name="sqlHost" required placeholder="192.168.1.10"></label><label>${t('sqlPort')}<input name="sqlPort" type="number" min="1" max="65535" value="1433" required></label><label>${t('sqlAdmin')}<input name="sqlAdmin" value="sa" required autocomplete="off"></label><label>${t('sqlPassword')}<input name="sqlPassword" type="password" required autocomplete="off"></label><label>${t('profile')}<select name="profile" id="profiles" required></select></label><label>${t('appEnv')}<select name="appEnv"><option value="local">local</option><option value="production">production</option></select></label><label>${t('gameDatabase')}<input name="gameDatabase" value="MuOnline" required></label><label>${t('webDatabase')}<input name="webDatabase" value="MuOnline_Web" required></label><label>${t('appLogin')}<input name="appLogin" value="muonline_web_app" required></label><label>${t('gameLogin')}<input name="gameLogin" value="muonline_web_user" required></label></div><label class="check"><input name="trustCertificate" type="checkbox">${t('trustCertificate')}</label><p class="hint">${t('passwordHint')}</p><fieldset><legend>${t('access')}</legend>${accessFields()}</fieldset><fieldset><legend>${t('firstAdmin')}</legend>${adminFields()}</fieldset><div class="actions"><button class="primary" type="submit">${t('install')}</button><button type="button" id="resumeInstall">${t('resumeInstall')}</button></div><p class="hint">${t('resumeHint')}</p></form>`,
+    access: `<h1>${t('accessTitle')}</h1><p class="lead">${t('accessLead')}</p><form id="accessForm">${accessFields()}<div class="warning">${t('accessWarning')}</div><button class="primary" type="submit">${t('applyAccess')}</button></form>`,
+    admins: `<h1>${t('adminsTitle')}</h1><p class="lead">${t('adminsLeadBefore')}<code>admin:create</code>${t('adminsLeadAfter')}</p><form id="adminForm">${adminFields()}<button class="primary" type="submit">${t('createAdmin')}</button></form><p class="hint">${t('adminsHint')}</p>`,
+    backup: `<h1>${t('backupTitle')}</h1><p class="lead">${t('backupLead')}</p><form id="backupForm">${backupFields()}<button class="primary" type="submit">${t('createBackup')}</button></form><p class="hint">${t('backupHint')}</p>`,
+    updates: `<h1>${t('updatesTitle')}</h1><p class="lead">${t('updatesLead')}</p><div class="actions"><button data-action="updates">${t('checkUpdates')}</button></div><div class="panel"><h2>${t('managerTitle')}</h2><p id="managerFeed"></p><button data-action="updateManager">${t('updateManager')}</button></div><form id="updateForm"><h2>${t('webTitle')}</h2><p id="webFeed"></p><p class="hint">${t('updateHint')}</p>${backupFields()}<label class="check"><input type="checkbox" name="migrationAcknowledged" required>${t('migrationWarning')}</label><button class="primary" type="submit">${t('updateWeb')}</button></form>`,
+    settings: `<h1>${t('settingsTitle')}</h1><p class="lead">${t('bucketBefore')}<code>marketing</code>${t('bucketAfter')}</p><form id="settingsForm"><label>${t('cdn')}<input name="cdn" type="url" required></label><label>${t('webChannel')}<input name="webChannel" required></label><label>${t('managerChannel')}<input name="managerChannel" required></label><p class="hint">${t('feedHintBefore')}<code>muonline-web/releases/v1.3.0</code>${t('feedHintAfter')}</p><p id="trustState" class="warning"></p><button class="primary" type="submit">${t('saveSettings')}</button></form>`
   };
   content.innerHTML = pages[page];
-  populate();
+  populate(true);
   bind();
 }
 
 /** Populate dynamic values using text/value properties, never release-supplied HTML. */
-function populate() {
+function populate(fillSettings = false) {
   if (page === 'overview' && status?.installed) {
     document.querySelector('#webVersion').textContent = status.version;
     document.querySelector('#accessMode').textContent = status.access.mode.toUpperCase();
@@ -51,7 +117,7 @@ function populate() {
     } catch {
       services = [];
     }
-    document.querySelector('#statusDetail').textContent = 'Installation phase: ' + status.phase + services.map(service => '\n' + service.Service + ': ' + service.State + (service.Health ? ' / ' + service.Health : '')).join('');
+    document.querySelector('#statusDetail').textContent = t('phase', { phase: t('phase.' + status.phase) }) + services.map(service => '\n' + service.Service + ': ' + t('state.' + service.State) + (service.Health ? ' / ' + t('state.' + service.Health) : '')).join('');
   }
   if (page === 'install') {
     const select = document.querySelector('#profiles');
@@ -69,21 +135,23 @@ function populate() {
     if (!select.options.length) {
       const option = document.createElement('option');
       option.value = '';
-      option.textContent = 'Нужен е проверен подписан release';
+      option.textContent = t('signedReleaseRequired');
       select.append(option);
     }
   }
   if (page === 'updates') {
     for (const kind of ['web', 'manager']) {
       const feed = feeds[kind];
-      document.querySelector('#' + kind + 'Feed').textContent = feed?.error ?? (feed?.version ? 'Проверен release: ' + feed.version : 'Няма проверен release.');
+      document.querySelector('#' + kind + 'Feed').textContent = feed?.error ? translateMessage(language, feed.error) : (feed?.version ? t('verifiedRelease', { version: feed.version }) : t('noRelease'));
     }
   }
   if (page === 'settings') {
-    for (const key of ['cdn', 'webChannel', 'managerChannel']) {
-      document.querySelector('[name="' + key + '"]').value = settings[key] ?? '';
+    if (fillSettings) {
+      for (const key of ['cdn', 'webChannel', 'managerChannel']) {
+        document.querySelector('[name="' + key + '"]').value = settings[key] ?? '';
+      }
     }
-    document.querySelector('#trustState').textContent = settings.trustedKeys?.length ? 'Pinned signing keys: ' + settings.trustedKeys.join(', ') : 'Няма pinned production trust key. Инсталации и updates са блокирани до build с публичния ключ на release оператора.';
+    document.querySelector('#trustState').textContent = settings.trustedKeys?.length ? t('pinnedKeys', { keys: settings.trustedKeys.join(', ') }) : t('noTrust');
   }
 }
 
@@ -102,21 +170,24 @@ function backupInput(data) {
   return { username: data.get('backupUsername'), password: data.get('backupPassword'), directory: data.get('backupDirectory') };
 }
 
-/** Invoke a serialized operation and erase every password field even after failure. */
+/** Invoke a serialized operation; erase submitted secrets after success or failure. */
 async function perform(action, input = {}, quiet = false) {
   if (busy) {
     return;
   }
   busy = true;
-  document.querySelector('#activity').textContent = 'Изпълнява се…';
-  document.querySelector('#operation').textContent = action;
+  document.querySelector('#activity').textContent = t('running');
+  lastAction = action;
+  document.querySelector('#operation').textContent = actionLabel(action);
+  document.querySelector('#language').disabled = true;
   document.querySelectorAll('button').forEach(button => { button.disabled = true; });
   if (!quiet) {
-    output.textContent = 'Операция: ' + action + '\nИзчакайте завършването. Първоначален Docker build може да отнеме няколко минути.';
+    lastOutput = { kind: 'working', action };
+    renderOutput();
   }
   try {
     if (!window.manager) {
-      throw new Error('Preview mode: runtime operations are available only inside Electron on Windows.');
+      throw new Error(t('previewError'));
     }
     const response = await window.manager.invoke(action, input);
     if (!response.ok) {
@@ -125,6 +196,11 @@ async function perform(action, input = {}, quiet = false) {
     const result = response.result;
     if (action === 'settings') {
       settings = result;
+      changeLanguage(settings.language ?? language);
+    }
+    if (action === 'setLanguage') {
+      settings.language = result.language;
+      changeLanguage(result.language);
     }
     if (action === 'updates') {
       feeds = result;
@@ -139,23 +215,50 @@ async function perform(action, input = {}, quiet = false) {
       feeds = {};
     }
     if (!quiet) {
-      output.textContent = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+      lastOutput = { kind: 'result', action, value: result };
+      renderOutput();
     }
   } catch (error) {
-    if (!quiet) {
-      output.textContent = error.message;
+    if (!quiet || action === 'setLanguage') {
+      lastOutput = { kind: 'error', message: error.message };
+      renderOutput();
     }
   } finally {
-    document.querySelectorAll('input[type="password"]').forEach(input => { input.value = ''; });
+    if (['install', 'resumeInstall', 'admin', 'backup', 'update'].includes(action)) {
+      document.querySelectorAll('input[type="password"]').forEach(input => { input.value = ''; });
+    }
     busy = false;
     document.querySelectorAll('button').forEach(button => { button.disabled = false; });
-    document.querySelector('#activity').textContent = 'Готов за проверка';
+    document.querySelector('#language').disabled = false;
+    translateShell();
     populate();
+  }
+}
+
+/** Localize browser validation without sending values or changing constraint rules. */
+function localizeValidation(field) {
+  field.setCustomValidity('');
+  const validity = field.validity;
+  if (validity.valueMissing) {
+    field.setCustomValidity(t(field.type === 'checkbox' ? 'requiredCheckbox' : 'required'));
+  } else if (validity.typeMismatch) {
+    field.setCustomValidity(t(field.type === 'email' ? 'invalidEmail' : 'invalidUrl'));
+  } else if (validity.tooShort) {
+    field.setCustomValidity(t('tooShort', { min: field.minLength }));
+  } else if (validity.rangeUnderflow || validity.rangeOverflow) {
+    field.setCustomValidity(t('outOfRange', { min: field.min, max: field.max }));
+  } else if (!validity.valid) {
+    field.setCustomValidity(t('invalidValue'));
   }
 }
 
 /** Bind only the static forms and fixed action names rendered on the current page. */
 function bind() {
+  content.querySelectorAll('input, select').forEach(field => {
+    field.addEventListener('invalid', () => localizeValidation(field));
+    field.addEventListener('input', () => field.setCustomValidity(''));
+    field.addEventListener('change', () => field.setCustomValidity(''));
+  });
   content.querySelectorAll('[data-action]').forEach(button => {
     button.addEventListener('click', () => perform(button.dataset.action));
   });
@@ -195,6 +298,13 @@ function bind() {
   });
 }
 
+document.querySelector('#language').addEventListener('change', event => {
+  const previous = language;
+  perform('setLanguage', { language: event.target.value }, true).then(() => {
+    document.querySelector('#language').value = settings.language ?? previous;
+  });
+});
+
 document.querySelectorAll('[data-page]').forEach(button => {
   button.addEventListener('click', () => {
     page = button.dataset.page;
@@ -211,6 +321,7 @@ document.querySelectorAll('footer a').forEach(link => {
 /** Load public configuration and check both feeds automatically without applying updates. */
 async function initialize() {
   render();
+  renderOutput();
   await perform('settings', {}, true);
   await perform('updates', {}, true);
   if (window.manager) {

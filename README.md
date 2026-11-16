@@ -3,6 +3,8 @@
 Windows desktop control panel and separate NSIS installer for the existing MuOnline
 Web Laravel stack. The backend runs in Ubuntu-24.04 / WSL2 with Docker Engine.
 Closing the panel leaves services running; Windows sleep/shutdown stops availability.
+The panel supports English and Bulgarian through the language selector in the header.
+The choice is saved across restarts; NSIS also offers English/Bulgarian selection.
 
 The current implementation is **ready for code/UI review, not a verified production
 Windows release**. Read [review evidence and remaining checks](docs/review.md).

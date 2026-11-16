@@ -1,0 +1,31 @@
+; electron-builder 26 has no Bulgarian translations for these messages.
+; Its generated English fallbacks are intentionally replaced for LCID 1026 only.
+!pragma warning push
+!pragma warning disable 6030
+LangString win7Required 1026 "Нужен е Windows 7 или по-нов."
+LangString x64WinRequired 1026 "Нужен е 64-битов Windows."
+LangString appRunning 1026 "${PRODUCT_NAME} работи.$\nНатиснете OK, за да го затворите.$\nАко не се затвори, опитайте ръчно."
+LangString appCannotBeClosed 1026 "${PRODUCT_NAME} не може да бъде затворен.$\nЗатворете го ръчно и натиснете Повтори, за да продължите."
+LangString installing 1026 "Инсталиране, моля изчакайте…"
+LangString areYouSureToUninstall 1026 "Наистина ли искате да деинсталирате ${PRODUCT_NAME}?"
+LangString decompressionFailed 1026 "Разархивирането е неуспешно. Стартирайте инсталатора отново."
+LangString uninstallFailed 1026 "Премахването на старите файлове е неуспешно. Стартирайте инсталатора отново."
+LangString appClosing 1026 "Затваряне на работещия ${PRODUCT_NAME}…"
+LangString chooseInstallationOptions 1026 "Настройки за инсталиране"
+LangString chooseUninstallationOptions 1026 "Настройки за деинсталиране"
+LangString whichInstallationShouldBeRemoved 1026 "Коя инсталация да бъде премахната?"
+LangString whoShouldThisApplicationBeInstalledFor 1026 "За кого да бъде инсталирано приложението?"
+LangString selectUserMode 1026 "Изберете дали приложението да бъде достъпно за всички потребители или само за вас."
+LangString whichInstallationRemove 1026 "Приложението е инсталирано за всички потребители и отделно за текущия потребител.$\nКоя инсталация да бъде премахната?"
+LangString freshInstallForAll 1026 "Нова инсталация за всички потребители (изисква администраторски права)."
+LangString freshInstallForCurrent 1026 "Нова инсталация само за текущия потребител."
+LangString onlyForMe 1026 "Само за &мен"
+LangString forAll 1026 "За &всички потребители на този компютър"
+LangString loginWithAdminAccount 1026 "За да продължите, влезте с потребител с администраторски права."
+LangString perUserInstallExists 1026 "Вече има инсталация за текущия потребител."
+LangString perUserInstall 1026 "Има инсталация за текущия потребител."
+LangString perMachineInstallExists 1026 "Вече има инсталация за всички потребители."
+LangString perMachineInstall 1026 "Има инсталация за всички потребители."
+LangString reinstallUpgrade 1026 "Ще бъде преинсталирано/обновено."
+LangString uninstall 1026 "Ще бъде деинсталирано."
+!pragma warning pop

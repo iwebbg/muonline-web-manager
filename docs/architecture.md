@@ -91,3 +91,23 @@ the previous configuration. If recovery itself fails, the error identifies the b
 Old certificates remain private for recovery. Public DNS, host firewall and router NAT
 are not silently changed; Windows forwarding, LAN/public reachability and real ACME
 issuance require end-to-end acceptance checks.
+
+## Interface languages
+
+The panel supports `en` and `bg`. It starts with the OS locale (Bulgarian for bg
+locales, English otherwise) until the user chooses a language in the header. The
+strictly validated `setLanguage` IPC action saves only the preference alongside the
+public feed settings in the Electron userData directory. Feed settings and WSL
+application APP_ENV are independent of the panel language. Existing settings files
+without a language continue to work. Changing language preserves unsent form values
+in memory and does not persist credentials or invoke a deployment operation.
+
+Application text lives in `src/shared/locales/{en,bg}.js`; known operational messages
+are translated at the presentation boundary in `src/shared/messages.js`, preserving
+recovery paths and technical identifiers. Native Electron menus/dialogs use the same
+language. SQL diagnostic output, process logs and unknown third-party errors retain
+their original text. Browser form validation messages are localized as well.
+
+NSIS provides a separate English/Bulgarian installer language selector. Custom
+welcome/support pages and missing upstream Bulgarian installer messages are translated
+in build/installer*.nsh. Installer language and the saved panel preference are separate.

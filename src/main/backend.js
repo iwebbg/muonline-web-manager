@@ -1,8 +1,10 @@
-import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, writeFile, rename, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { execute, launchDetached } from './process.js';
 import { DEFAULT_CDN, DEFAULT_CHANNEL, MANAGER_VERSION, checkRelease, downloadRelease, newer } from './releases.js';
+
+import { languages, resolveLocale } from '../shared/i18n.js';
 
 const DISTRIBUTION = 'Ubuntu-24.04';
 const BOOTSTRAP = "import sys,json,io; p=json.load(sys.stdin); sys.stdin=io.StringIO(json.dumps(p['request'])); exec(compile(p['worker'],'muonline-worker','exec'),{'__name__':'__main__'})";
@@ -10,10 +12,11 @@ const BOOTSTRAP = "import sys,json,io; p=json.load(sys.stdin); sys.stdin=io.Stri
 /** Own the desktop-to-WSL boundary and authenticated release lifecycle. */
 export class Backend {
   /** Receive trusted resource paths from the main process only. */
-  constructor(resources, userData, trustFile = path.join(resources, 'trust.json')) {
+  constructor(resources, userData, trustFile = path.join(resources, 'trust.json'), defaultLanguage = 'en') {
     this.resources = resources;
     this.userData = userData;
     this.trustFile = trustFile;
+    this.language = resolveLocale(defaultLanguage);
     this.settings = { cdn: DEFAULT_CDN, webChannel: DEFAULT_CHANNEL, managerChannel: 'muonline-web/manager/stable' };
     this.webRelease = null;
     this.managerRelease = null;
@@ -26,6 +29,9 @@ export class Backend {
     try {
       const stored = JSON.parse(await readFile(path.join(this.userData, 'settings.json'), 'utf8'));
       this.settings = this.validateSettings(stored);
+      if (languages.includes(stored.language)) {
+        this.language = stored.language;
+      }
     } catch {
       // Missing or invalid settings fall back to the documented public CDN.
     }
@@ -51,6 +57,14 @@ export class Backend {
       }
     }
     return result;
+  }
+
+  /** Persist public preferences atomically without SQL or administrator credentials. */
+  async savePreferences(settings = this.settings, language = this.language) {
+    const filename = path.join(this.userData, 'settings.json');
+    const temporary = filename + '.tmp';
+    await writeFile(temporary, JSON.stringify({ ...settings, language }, null, 2), { mode: 0o600 });
+    await rename(temporary, filename);
   }
 
   /** Run the packaged Python worker with private JSON stdin and fixed WSL arguments. */
@@ -182,13 +196,22 @@ export class Backend {
     try {
       switch (action) {
         case 'settings':
-          return { ...this.settings, managerVersion: MANAGER_VERSION, trustedKeys: Object.keys(this.trust.keys) };
-        case 'saveSettings':
-          this.settings = this.validateSettings(input);
-          await writeFile(path.join(this.userData, 'settings.json'), JSON.stringify(this.settings, null, 2));
+          return { ...this.settings, language: this.language, managerVersion: MANAGER_VERSION, trustedKeys: Object.keys(this.trust.keys) };
+        case 'setLanguage':
+          if (!languages.includes(input.language)) {
+            throw new Error('Invalid language.');
+          }
+          await this.savePreferences(this.settings, input.language);
+          this.language = input.language;
+          return { language: this.language };
+        case 'saveSettings': {
+          const settings = this.validateSettings(input);
+          await this.savePreferences(settings);
+          this.settings = settings;
           this.webRelease = null;
           this.managerRelease = null;
           return 'Feed settings saved.';
+        }
         case 'prerequisites':
           return await this.prerequisites();
         case 'installWsl':
