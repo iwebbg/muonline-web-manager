@@ -258,3 +258,17 @@ electron-builder NSIS templates, using the real generated header, stdin mode and
 template working directory with -WX. All eight compile checks and 78 ordinary tests
 passed. Complete-template tests embed disposable fixture payloads and never execute
 their outputs; they are not distributable installers or a Windows runtime test.
+
+## Windows Python CI portability — 2026-11-17
+
+The Windows runner exposed two platform-specific failures. Text-mode atomic writes
+expanded existing CRLF into CR-CR-LF when preserving an environment file. Atomic writes
+now encode strings explicitly as UTF-8 and write bytes without newline translation.
+ZIP fixtures previously passed names to ZipInfo's constructor, which normalizes
+backslashes on Windows. Fixtures now preserve raw archive metadata; extraction checks
+orig_filename and rejects normalization/truncation, backslashes and control characters
+before any extraction. No security assertion or Windows test was skipped to fix these.
+
+Regression checks reproduce Windows newline translation and ZipInfo normalization on
+Linux, including malformed raw NUL names. All 39 Node and 41 Python tests passed locally.
+The actual Windows CI rerun remains required to confirm the runner result.
