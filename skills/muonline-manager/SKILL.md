@@ -9,12 +9,16 @@ Read the appropriate repository document before changing a contract:
 - [Releases](../../docs/releases.md): production exports, signing, R2 paths, manager updates.
 - [Recovery](../../docs/recovery.md): partial bootstrap, config restore and migration failure.
 - [Review](../../docs/review.md): evidence and outstanding Windows acceptance checks.
+- [Administrators](../../docs/administrators.md): JSON commands, private password stdin,
+  confirmed deactivation, last-active protection and installed web release requirements.
 - [SQL Troubleshooting](../../docs/sql-troubleshooting.md): read-only Windows/WSL/Docker
   diagnostics, independent SQL identities, privileged previews and VM acceptance.
 
 Discover commands and profile keys from the actual sibling Laravel source or the
 verified release, rather than copying an adapter list. `admin:create` currently uses
-interactive stdin. `app:backup` supports SQLite only; SQL deployments use native SQL
+interactive stdin; `admin:list`, `admin:update` and `admin:delete` use
+`--json --no-interaction`. Password updates use `--password-stdin` only. These commands
+require an installed web release that includes them. `app:backup` supports SQLite only; SQL deployments use native SQL
 backups with temporary authorization. Game bootstrap provisions access to an existing
 game database; it does not create a game server schema from nothing.
 

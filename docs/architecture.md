@@ -70,8 +70,10 @@ The restricted login/bootstrap behavior comes from the existing PHP entrypoint:
    game:doctor must pass the schema and least-privilege checks.
 
 Game writes are disabled by default. `game:doctor` expects those safety switches to
-remain closed. There is no invented CLI command for admin listing/deactivation/reset;
-only the existing `admin:create` operation is exposed. SQL backup does not call the
+remain closed. Administrator listing/update/deactivation/password reset use the current Laravel
+`admin:list`/`admin:update` JSON contract. The confirmed deletion operation uses
+`admin:delete --force`; the UI favors deactivation. See [administrator management](administrators.md)
+for private stdin, response filtering and the required web release. SQL backup does not call the
 SQLite-only `app:backup` command.
 
 ## Access modes

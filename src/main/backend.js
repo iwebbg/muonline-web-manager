@@ -307,6 +307,9 @@ export class Backend {
         case 'logs':
         case 'doctor':
         case 'admin':
+        case 'adminList':
+        case 'adminUpdate':
+        case 'adminDelete':
         case 'access':
         case 'backup':
         case 'resumeInstall':

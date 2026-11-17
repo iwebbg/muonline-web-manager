@@ -282,6 +282,99 @@ def create_admin(details):
     return 'Administrator created.'
 
 
+def administrator_snapshot(value):
+    """Return only the documented public identity fields, never tokens or hashes."""
+    require(isinstance(value, dict), 'Invalid administrator command response.')
+    require(type(value.get('id')) is int and 0 < value['id'] <= 9007199254740991, 'Invalid administrator command response.')
+    require(value.get('role') in ('administrator', 'game_master') and type(value.get('is_active')) is bool, 'Invalid administrator command response.')
+    require(all(isinstance(value.get(key), str) and len(value[key]) <= 255 for key in ('name', 'email')), 'Invalid administrator command response.')
+    return {key: value[key] for key in ('id', 'name', 'email', 'role', 'is_active')}
+
+
+def manage_administrators(operation, details=None, secrets_to_hide=()):
+    """Run fixed Artisan commands, accepting JSON validation failures without exposing process output."""
+    details = details or {}
+    require(operation in ('list', 'update', 'delete'), 'Unsupported administrator operation.')
+    arguments = ['docker', 'compose', '--project-name', 'muonline-manager', '--file', str(COMPOSE), 'exec', '-T', 'app', 'php', 'artisan', 'admin:' + operation]
+    private_input = None
+    if operation != 'list':
+        identity = details.get('id')
+        require(type(identity) is int and 0 < identity <= 9007199254740991, 'Invalid administrator ID.')
+        arguments.append(str(identity))
+    if operation == 'update':
+        require(set(details) <= {'id', 'name', 'email', 'is_active', 'password', 'confirmed'}, 'Invalid administrator update fields.')
+        changes = 0
+        for key in ('name', 'email'):
+            if key in details:
+                arguments.append('--' + key + '=' + single_line(details[key]))
+                changes += 1
+        if 'is_active' in details:
+            require(type(details['is_active']) is bool, 'Invalid administrator active state.')
+            require(details['is_active'] or details.get('confirmed') is True, 'Confirm administrator deactivation.')
+            arguments.append('--active=' + ('1' if details['is_active'] else '0'))
+            changes += 1
+        if 'password' in details:
+            secret = single_line(details['password'], 1024)
+            valid_password = (
+                len(secret.encode('utf-8')) <= 4096 and len(secret) >= 12
+                and any(char.isupper() for char in secret)
+                and any(char.islower() for char in secret)
+                and any(char.isdigit() for char in secret)
+                and any(not char.isalnum() and not char.isspace() for char in secret)
+            )
+            if not valid_password:
+                return {'code': 'validation', 'errors': {'password': ['Administrator password must have at least 12 characters, uppercase, lowercase, number and symbol.']}}
+            arguments.append('--password-stdin')
+            private_input = secret + '\n'
+            secrets_to_hide = (*secrets_to_hide, secret)
+            changes += 1
+        require(changes > 0, 'Provide at least one administrator change.')
+    if operation == 'delete':
+        require(details.get('confirmed') is True, 'Confirm administrator deletion.')
+        arguments.append('--force')
+    arguments.extend(['--json', '--no-interaction'])
+    try:
+        result = subprocess.run(arguments, input=private_input, text=True, capture_output=True, timeout=90)
+    except (OSError, subprocess.TimeoutExpired):
+        return {'code': 'commandUnavailable'}
+    output = result.stdout
+    if len(output) > 2000000:
+        return {'code': 'invalidResponse'}
+    try:
+        response = json.loads(output)
+        require(isinstance(response, dict), 'Invalid administrator command response.')
+        if result.returncode != 0:
+            errors = {}
+            for field, messages in response.get('errors', {}).items():
+                if field not in ('name', 'email', 'password', 'is_active', 'administrator', 'database', 'confirmation') or not isinstance(messages, list):
+                    continue
+                safe = []
+                for message in messages[:10]:
+                    if not isinstance(message, str):
+                        continue
+                    for secret in secrets_to_hide:
+                        if secret:
+                            message = message.replace(secret, '[REDACTED]')
+                    safe.append(message[:1000])
+                if safe:
+                    errors[field] = safe
+            return {'code': 'validation', 'errors': errors} if errors else {'code': 'commandUnavailable'}
+        require('errors' not in response, 'Invalid administrator command response.')
+        if operation == 'list':
+            require(isinstance(response.get('administrators'), list), 'Invalid administrator command response.')
+            return {'administrators': [administrator_snapshot(row) for row in response['administrators']]}
+        if operation == 'delete':
+            require(response.get('administrator') == {'id': details['id'], 'deleted': True}, 'Invalid administrator command response.')
+            return {'administrator': {'id': details['id'], 'deleted': True}}
+        row = administrator_snapshot(response.get('administrator'))
+        require(row['id'] == details['id'], 'Invalid administrator command response.')
+        return {'administrator': row}
+    except (ValueError, TypeError, AttributeError):
+        # Missing commands in an older web release and bootstrap crashes need distinct, safe guidance.
+        missing = re.search(r'(command[^\r\n]*admin:[a-z]+[^\r\n]*not defined|no commands defined in the ["\']admin["\'] namespace)', output + result.stderr, re.I)
+        return {'code': 'releaseRequired' if missing else 'invalidResponse'}
+
+
 def install(request):
     """Provision restricted SQL identities using the existing Laravel entrypoint bootstrap."""
     require(not STATE.exists() and not APP.exists(), 'Existing installation detected. Use recovery or update instead.')
@@ -603,6 +696,10 @@ def dispatch(request):
         return diagnose_sql()
     if action == 'admin':
         return create_admin(request['administrator'])
+    if action in ('adminList', 'adminUpdate', 'adminDelete'):
+        require(state.get('phase') == 'ready', 'Recover installation first.')
+        private_values = [value for key, value in state.get('environment', {}).items() if any(marker in key for marker in ('PASSWORD', 'KEY', 'TOKEN', 'SECRET')) and isinstance(value, str)]
+        return manage_administrators({'adminList': 'list', 'adminUpdate': 'update', 'adminDelete': 'delete'}[action], request.get('administrator'), private_values)
     if action == 'access':
         require(state.get('phase') == 'ready', 'Recover installation first.')
         return apply_access(state, request['access'])

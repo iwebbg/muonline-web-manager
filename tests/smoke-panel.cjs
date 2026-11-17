@@ -9,6 +9,12 @@ let window;
 let language = 'en';
 let installedVersion = '1.3.0';
 let pending = false;
+let adminError = null;
+let identities = [
+  {id:1,name:'Owner',email:'owner@example.test',role:'administrator',is_active:true},
+  {id:2,name:'Game Master',email:'gm@example.test',role:'game_master',is_active:true},
+  {id:3,name:'Second admin',email:'second@example.test',role:'administrator',is_active:true}
+];
 const timer = setTimeout(() => { console.error('Electron smoke test timed out.'); app.exit(1); }, 60000);
 
 /** Wait until initial settings, feed and status calls finish. */
@@ -38,7 +44,16 @@ async function smoke() {
     if (action === 'update') {
       installedVersion = '1.4.0';
     }
+    if (action === 'adminUpdate') {
+      const details = input.administrator;
+      if (details.password === 'Rejected-password123!') return {ok:true,result:{code:'validation',errors:{password:['The password must contain at least one symbol.']}}};
+      if (details.email === 'duplicate@example.test') return {ok:true,result:{code:'validation',errors:{email:['The email has already been taken.']}}};
+      const row = identities.find(row=>row.id===details.id);
+      for (const key of ['name','email','is_active']) if (Object.hasOwn(details,key)) row[key]=details[key];
+      return {ok:true,result:{administrator:{...row}}};
+    }
     const results = {
+      adminList: adminError ? {code:adminError} : {administrators:identities},
       setLanguage: { language },
       sqlInspect: { selectedInstance: 'SQLEXPRESS', instances: [{ name: 'SQLEXPRESS', state: 'Running', version: '15.0.1', tcp: { listenAll: true, sections: [{ name: 'IPAll', port: '1433', dynamicPort: '' }] } }] },
       sqlDiagnose: { schema: 1, createdAt: '2026-11-17T10:00:00Z', steps: [{ id: 'docker.game.sql', status: 'failed', category: 'authentication', reason: 'loginRejected', action: 'loginRejected', evidence: { database: 'MuOnline', nativeCode: 18456 } }] },
@@ -63,6 +78,7 @@ async function smoke() {
     await selectLanguage(locale);
     for (const page of ['overview', 'install', 'access', 'admins', 'sql', 'backup', 'updates', 'support']) {
       await window.webContents.executeJavaScript(`document.querySelector('[data-page="${page}"]').click()`);
+      await window.webContents.executeJavaScript(`new Promise(resolve=>{const timer=setInterval(()=>{if(!document.querySelector('#language').disabled){clearInterval(timer);resolve();}},10);})`);
       const state = await window.webContents.executeJavaScript(`({ links: [...document.querySelectorAll('footer a')].map(a => a.href), bottom: document.querySelector('footer').getBoundingClientRect().bottom, height: innerHeight, heading: document.querySelector('h1').textContent, body: document.querySelector('#content').textContent, lang: document.documentElement.lang })`);
       assert.equal(state.links.length, 3);
       assert.ok(state.bottom <= state.height + 1);
@@ -141,10 +157,57 @@ async function smoke() {
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#updateNotice').hidden`), false);
   const rejected = await window.webContents.executeJavaScript(`window.manager.invoke('exec', { command: 'dangerous' }).then(() => false, () => true)`);
   assert.equal(rejected, true);
-  await window.webContents.executeJavaScript(`document.querySelector('[data-page="admins"]').click(); document.querySelector('[name="adminName"]').value='Owner'; document.querySelector('[name="adminEmail"]').value='owner@example.invalid'; document.querySelector('[name="adminPassword"]').value='Test-only-password123!'; document.querySelector('#adminForm').requestSubmit();`);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-page="admins"]').click()`);
+  await window.webContents.executeJavaScript(`new Promise(resolve=>{const timer=setInterval(()=>{if(!document.querySelector('#language').disabled){clearInterval(timer);resolve();}},10);})`);
+  await window.webContents.executeJavaScript(`document.querySelector('[name="adminName"]').value='Owner'; document.querySelector('[name="adminEmail"]').value='owner@example.invalid'; document.querySelector('[name="adminPassword"]').value='Test-only-password123!'; document.querySelector('#adminForm').requestSubmit();`);
   await window.webContents.executeJavaScript(`new Promise(resolve => { const interval = setInterval(() => { if (!document.querySelector('[data-page]').disabled) { clearInterval(interval); resolve(); } }, 10); })`);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="adminPassword"]').value`), '');
   assert.ok(operations.some(operation => operation.action === 'admin' && operation.input.administrator.email === 'owner@example.invalid'));
+  await selectLanguage('bg');
+  await window.webContents.executeJavaScript(`document.querySelector('[data-administrator-id="2"] [data-admin-action="password"]').click(); document.querySelector('[name="managedPassword"]').checkValidity()`);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="managedPassword"]').validationMessage`),'Попълнете това поле.');
+  await selectLanguage('en');
+  // Exercise live table actions through the sandbox bridge, including a refusal and list reloads.
+  const idle = async () => window.webContents.executeJavaScript(`new Promise(resolve=>{const timer=setInterval(()=>{if(!document.querySelector('#language').disabled){clearInterval(timer);resolve();}},10);})`);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelectorAll('#administratorTable tbody tr').length`),3);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-administrator-id="2"] [data-admin-action="edit"]').click(); document.querySelector('[name="managedName"]').value='Updated GM'; document.querySelector('#adminManageForm').requestSubmit();`);
+  await idle();
+  assert.ok(operations.some(op=>op.action==='adminUpdate' && op.input.administrator.name==='Updated GM'));
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[data-administrator-id="2"]').textContent.includes('Updated GM')`),true);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-administrator-id="2"] [data-admin-action="edit"]').click(); document.querySelector('[name="managedEmail"]').value='duplicate@example.test'; document.querySelector('#adminManageForm').requestSubmit();`);
+  await idle();
+  assert.ok(await window.webContents.executeJavaScript(`document.querySelector('#adminMessages').textContent.includes('already been taken')`));
+  const beforeDeactivate=operations.filter(op=>op.action==='adminUpdate').length;
+  await window.webContents.executeJavaScript(`document.querySelector('[data-administrator-id="2"] [data-admin-action="deactivate"]').click()`);
+  assert.equal(operations.filter(op=>op.action==='adminUpdate').length,beforeDeactivate);
+  await window.webContents.executeJavaScript(`document.querySelector('#adminConfirmDeactivation').click()`);
+  await idle();
+  assert.equal(operations.filter(op=>op.action==='adminUpdate').length,beforeDeactivate+1);
+  assert.equal(identities.find(row=>row.id===2).is_active,false);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-administrator-id="2"] [data-admin-action="activate"]').click()`);
+  await idle();
+  assert.equal(identities.find(row=>row.id===2).is_active,true);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-administrator-id="2"] [data-admin-action="password"]').click(); document.querySelector('[name="managedPassword"]').value='Changed-password123!'; document.querySelector('[name="managedPasswordConfirmation"]').value='Changed-password123!'; document.querySelector('#adminManageForm').requestSubmit();`);
+  await idle();
+  assert.ok(operations.some(op=>op.action==='adminUpdate' && op.input.administrator.password==='Changed-password123!'));
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="managedPassword"]')?.value ?? ''`),'');
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#output').textContent.includes('Changed-password123!')`),false);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-administrator-id="2"] [data-admin-action="password"]').click(); document.querySelector('[name="managedPassword"]').value='Rejected-password123!'; document.querySelector('[name="managedPasswordConfirmation"]').value='Rejected-password123!'; document.querySelector('#adminManageForm').requestSubmit();`);
+  await idle();
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="managedPassword"]').value`),'');
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="managedPasswordConfirmation"]').value`),'');
+  assert.equal(await window.webContents.executeJavaScript(`document.body.textContent.includes('Rejected-password123!')`),false);
+  // A stale UI cannot bypass the server rule; after refresh only one full administrator remains.
+  identities.find(row=>row.id===3).is_active=false;
+  await window.webContents.executeJavaScript(`document.querySelector('[data-action="adminList"]').click()`);
+  await idle();
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[data-administrator-id="1"] [data-admin-action="deactivate"]').disabled`),true);
+
+  adminError='releaseRequired';
+  await window.webContents.executeJavaScript(`document.querySelector('[data-action="adminList"]').click()`);
+  await idle();
+  assert.ok(await window.webContents.executeJavaScript(`document.querySelector('#adminMessages').textContent.includes('installed web release')`));
+  adminError=null;
   assert.ok(!operations.some(operation => ['install', 'update', 'updateManager'].includes(operation.action)));
   await window.webContents.executeJavaScript(`document.querySelector('#updateNotice').click(); document.querySelector('[name="backupUsername"]').value='test'; document.querySelector('[name="backupPassword"]').value='Test-backup-secret'; document.querySelector('[name="backupDirectory"]').value='/backups'; document.querySelector('[name="migrationAcknowledged"]').checked=true; document.querySelector('#updateForm').requestSubmit();`);
   await window.webContents.executeJavaScript(`new Promise(resolve => { const interval = setInterval(() => { if (!document.querySelector('#language').disabled && document.querySelector('#webFeed').textContent.includes('1.4.0') && document.querySelector('#updateForm button').disabled) { clearInterval(interval); resolve(); } }, 10); })`);

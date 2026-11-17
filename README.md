@@ -32,6 +32,7 @@ artifacts without publishing. It can run after the branch is pushed by an operat
 
 - [Architecture and security boundaries](docs/architecture.md)
 - [Build, sign and distribute releases](docs/releases.md)
+- [Web administrator and Game Master management](docs/administrators.md)
 - [SQL Troubleshooting: EN/BG diagnostics and Windows VM checks](docs/sql-troubleshooting.md)
 - [Recovery and operational limits](docs/recovery.md)
 - [Acceptance checklist and local evidence](docs/review.md)

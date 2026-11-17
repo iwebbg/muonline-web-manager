@@ -184,3 +184,18 @@ the manager/web update cards have a 20px gap. EN/BG smoke assertions cover all t
 The new Laravel administrator list/update/delete classes were inspected as references;
 at the time of this change they contained empty handlers. Their integration must use
 the completed command contract rather than assuming successful listing or mutation.
+
+## Administrator CLI integration — 2026-11-17
+
+The web administrator page now lists administrators/Game Masters and exposes edit,
+private-stdin password reset and activate/deactivate actions. Deactivation requires
+confirmation; successful changes refresh the list. Safe JSON field errors, old-release
+commands and non-JSON failures are handled separately. A confirmed admin:delete runtime
+action is available; the UI uses Deactivate. No arbitrary SQL/tinker fallback exists.
+
+Verification: 36 Node + 31 Python tests passed, plus all eight EN/BG UI pages and the
+actual Laravel command test in its disposable network-isolated SQLite container
+(19 tests, 84 assertions). A new signed web runtime with the commands/migrations is
+required for installed sites. No web release was published or sibling code edited.
+Windows/WSL execution against an installed release still needs the VM test. See
+[administrators.md](administrators.md) for the command and release boundaries.

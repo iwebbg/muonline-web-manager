@@ -2,6 +2,22 @@ import { resolveLocale, translate } from './i18n.js';
 
 /** Known application messages only. Arbitrary logs and SQL diagnostics are not translated. */
 const bulgarian = {
+  "Administrator not found.": "Администраторът не е намерен.",
+  "The last active administrator cannot be deleted or deactivated.": "Последният активен администратор не може да бъде изтрит или деактивиран.",
+  "Administrator update failed. Check database availability and identity constraints.": "Промяната е неуспешна. Проверете връзката с базата и ограниченията за потребителите.",
+  "Deletion failed. Check database availability; identities referenced by history must be deactivated with admin:update --active=0 instead.": "Изтриването е неуспешно. Проверете базата; потребителите, свързани с историята, трябва да бъдат деактивирани.",
+  "Invalid administrator ID.": "Невалиден ID на администратор.",
+  "Invalid administrator update fields.": "Невалидни полета за редакция.",
+  "Invalid administrator active state.": "Невалидно активно състояние.",
+  "Confirm administrator deactivation.": "Потвърдете деактивирането на администратора.",
+  "Confirm administrator deletion.": "Потвърдете изтриването на администратора.",
+  "Provide at least one administrator change.": "Посочете поне една промяна.",
+  "Administrator password must have at least 12 characters, uppercase, lowercase, number and symbol.": "Паролата трябва да има поне 12 символа, главна и малка буква, число и специален символ.",
+  "The email has already been taken.": "Този имейл вече се използва.",
+  "The password must be at least 12 characters.": "Паролата трябва да е поне 12 символа.",
+  "The password must contain at least one uppercase and one lowercase letter.": "Паролата трябва да съдържа главна и малка буква.",
+  "The password must contain at least one number.": "Паролата трябва да съдържа число.",
+  "The password must contain at least one symbol.": "Паролата трябва да съдържа специален символ.",
   "Runtime operations require Windows with WSL2. Linux development supports tests and the panel preview.": "Runtime операциите изискват Windows с WSL2. На Linux са достъпни тестовете и прегледът на интерфейса.",
   "Invalid feed settings.": "Невалидни настройки на release feed.",
   "CDN must use HTTPS without credentials.": "CDN адресът трябва да използва HTTPS без вградени credentials.",
