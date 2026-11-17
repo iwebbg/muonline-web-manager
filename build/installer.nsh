@@ -1,5 +1,9 @@
 !addincludedir "${__FILEDIR__}"
-!include "installer-bg.nsh"
+; electron-builder generates message includes asynchronously. Apply overrides only
+; after all generated includes have loaded, when installer.nsi invokes this hook.
+!macro customHeader
+  !include "installer-bg.nsh"
+!macroend
 
 ; English (1033) and Bulgarian (1026) custom installer strings.
 LangString MuWelcome 1033 "Install the persistent MuOnline Web control panel. WSL2 and Docker Engine setup is available after launch. Services continue when the panel closes.$\r$\n$\r$\nSupport development:$\r$\nhttps://buymeacoffee.com/interweb.bg$\r$\nhttps://ko-fi.com/interwebltd$\r$\nhttps://paypal.me/interwebltd"

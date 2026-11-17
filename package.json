@@ -14,6 +14,7 @@
     "dist:win": "electron-builder --win nsis --x64 --publish never",
     "release:web": "python3 scripts/package-release.py",
     "test:ui": "node scripts/run-electron-smoke.js",
+    "test:installer": "node scripts/test-installer.cjs",
     "test:contract": "python3 scripts/test-laravel-contract.py",
     "test:sql": "python3 scripts/test-sql-backup.py",
     "test:sql-troubleshooting": "python3 scripts/test-sql-troubleshooting.py",

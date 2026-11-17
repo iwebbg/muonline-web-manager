@@ -150,3 +150,17 @@ Windows AppUserModelID matches `build.appId` for taskbar grouping. Development u
 the root image directly. Rebuild/reinstall the Windows package after changing it;
 Windows may retain cached icons for existing pinned shortcuts. Actual Explorer and
 taskbar rendering must be checked in the Windows VM.
+
+## NSIS translation include order
+
+Bulgarian message overrides are loaded by `customHeader` in `build/installer.nsh`,
+after electron-builder's generated messages. Builder prepares its includes
+asynchronously, so top-level overrides can run before generated fallbacks and trigger
+fatal NSIS warning 6030 under `-WX`. Keep suppression of that intentional override
+warning local to `installer-bg.nsh`; do not disable warningsAsErrors for the build.
+
+`npm run test:installer` uses the installed builder's real message generator and NSIS
+compiler. It compiles installer/uninstaller page contracts in all three possible
+custom-include positions with `-WX`, without running generated executables. Windows CI
+runs it before the full installer build. The contract check is available on Linux as
+well and requires the builder's cached/downloadable NSIS compiler.

@@ -1,5 +1,5 @@
-; electron-builder 26 has no Bulgarian translations for these messages.
-; Its generated English fallbacks are intentionally replaced for LCID 1026 only.
+; Override electron-builder's generated Bulgarian/English fallback entries for LCID 1026.
+; Included from customHeader after all generated message includes, never before them.
 !pragma warning push
 !pragma warning disable 6030
 LangString win7Required 1026 "Нужен е Windows 7 или по-нов."

@@ -219,3 +219,16 @@ and UTF-8 pipe decoding. Verification: 39 Node + 39 Python tests, eight-page EN/
 real dotenv parsing and Compose resolution, isolated release/nginx validation and Linux
 packaging passed. npm audit reported zero known vulnerabilities. Windows/WSL/ACME
 acceptance remains required; no production data or sibling Laravel source was changed.
+
+## Windows NSIS warning-6030 correction — 2026-11-17
+
+A real Windows build log exposed a fatal duplicate Bulgarian LangString definition.
+The custom include could run before generated message files because electron-builder
+loads them asynchronously. Moving overrides into its customHeader hook makes their
+ordering deterministic after all fallbacks. Global warning-as-error behavior is kept.
+
+The old ordering reproduced warning 6030 under the same cached NSIS 3.0.4.1 compiler.
+The corrected custom pages compiled for installer/uninstaller in three include orders
+(six checks with -WX), and all 78 ordinary tests passed. The new test:installer command
+is in Windows CI. This fixes the reported compiler failure; the full corrected Windows
+installer must still be built and executed on Windows.
