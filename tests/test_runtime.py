@@ -76,11 +76,15 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn('fastcgi_param HTTPS on', tls_config)
 
     def test_zip_rejects_traversal_symlinks_and_mutable_runtime_files(self):
-        for name in ['../escape', '/etc/passwd', '.env', 'storage/app/public/upload', 'vendor/autoload.php', 'a\\b', 'C:/escape']:
+        for name in ['../escape', '/etc/passwd', '.env', 'storage/app/public/upload', 'vendor/autoload.php', 'a\\b', 'C:/escape', 'public/file\x00suffix']:
             archive = self.root / 'bad.zip'
             with zipfile.ZipFile(archive, 'w') as bundle:
-                bundle.writestr(name, 'evil')
-            with self.assertRaises(ValueError):
+                entry = zipfile.ZipInfo()
+                # Preserve the raw ZIP name: ZipInfo(name) rewrites backslashes on Windows.
+                entry.filename = name
+                entry.orig_filename = name
+                bundle.writestr(entry, 'evil')
+            with self.subTest(path=name), self.assertRaises(ValueError):
                 worker.safe_extract(archive, self.root / 'extracted', 'application')
         with zipfile.ZipFile(self.root / 'link.zip', 'w') as bundle:
             entry = zipfile.ZipInfo('link')
@@ -88,6 +92,34 @@ class RuntimeTests(unittest.TestCase):
             bundle.writestr(entry, '/etc/passwd')
         with self.assertRaises(ValueError):
             worker.safe_extract(self.root / 'link.zip', self.root / 'extracted', 'application')
+
+    def test_raw_zip_backslash_is_rejected_before_windows_filename_normalization(self):
+        archive = self.root / 'raw-path.zip'
+        entry = zipfile.ZipInfo()
+        entry.filename = entry.orig_filename = 'public\\file.txt'
+        with zipfile.ZipFile(archive, 'w') as bundle:
+            bundle.writestr(entry, 'unsafe')
+        with patch.object(zipfile.os, 'sep', '\\'):
+            with zipfile.ZipFile(archive) as bundle:
+                self.assertEqual(bundle.infolist()[0].filename, 'public/file.txt')
+                self.assertEqual(bundle.infolist()[0].orig_filename, 'public\\file.txt')
+            with self.assertRaises(ValueError):
+                worker.safe_extract(archive, self.root / 'extracted', 'application')
+        self.assertFalse((self.root / 'extracted').exists())
+
+    def test_atomic_text_preserves_crlf_without_platform_newline_expansion(self):
+        content = 'APP_KEY=unchanged\r\nCUSTOM="Първи\r\nВтори"\r\n'
+        real_fdopen = os.fdopen
+
+        def windows_fdopen(descriptor, mode, *args, **kwargs):
+            if mode == 'w':
+                kwargs.update(newline='\r\n', encoding='utf-8')
+            return real_fdopen(descriptor, mode, *args, **kwargs)
+
+        destination = self.root / 'windows.env'
+        with patch.object(worker.os, 'fdopen', side_effect=windows_fdopen):
+            worker.atomic(destination, content)
+        self.assertEqual(destination.read_bytes(), content.encode('utf-8'))
 
     def test_access_failure_restores_previous_config_and_key(self):
         calls = []

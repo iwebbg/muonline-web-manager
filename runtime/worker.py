@@ -49,8 +49,9 @@ def atomic(path, content):
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(dir=path.parent)
     try:
-        with os.fdopen(descriptor, 'wb' if isinstance(content, bytes) else 'w') as stream:
-            stream.write(content)
+        # Encode once; Windows text mode would turn existing CRLF into CR-CR-LF.
+        with os.fdopen(descriptor, 'wb') as stream:
+            stream.write(content.encode('utf-8') if isinstance(content, str) else content)
         os.chmod(temporary, 0o600)
         os.replace(temporary, path)
     finally:
@@ -241,9 +242,10 @@ def safe_extract(archive, destination, kind):
         total = 0
         seen = set()
         for member in bundle.infolist():
-            name = member.filename
+            # ZipInfo.filename may already have normalized backslashes or truncated NULs.
+            name = member.orig_filename
             path = PurePosixPath(name)
-            require(name and '\\' not in name and not path.is_absolute() and '..' not in path.parts and ':' not in name, 'Unsafe archive path.')
+            require(name and name == member.filename and not re.search(r'[\x00-\x1f\x7f]', name) and '\\' not in name and not path.is_absolute() and '..' not in path.parts and ':' not in name, 'Unsafe archive path.')
             require(str(path) not in seen, 'Duplicate archive path.')
             seen.add(str(path))
             mode = member.external_attr >> 16
