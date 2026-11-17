@@ -96,9 +96,11 @@ are explicit. A domain/email is validated before writing nginx config. HTTP-01 u
 a webroot, certificates have domain-specific directories, and a systemd timer renews
 certificates twice daily and reloads nginx. Port-80 ACME access is required for renewal.
 
-Every access switch backs up state/.env/Compose/nginx config, recreates containers,
+Every access switch backs up state/.env/Compose/nginx config, changes only the access
+keys in an existing .env, recreates containers,
 clears Laravel config cache, checks nginx and waits for health. Failed changes restore
-the previous configuration. If recovery itself fails, the error identifies the backup.
+the exact previous configuration files. If recovery itself fails, the error identifies
+the backup and an access-recovery-required phase prevents automatic Start/update.
 Old certificates remain private for recovery. Public DNS, host firewall and router NAT
 are not silently changed; Windows forwarding, LAN/public reachability and real ACME
 issuance require end-to-end acceptance checks.

@@ -166,6 +166,12 @@ function populate(fillSettings = false) {
   notice.textContent = feeds.web?.newTag && !feeds.web.ready && !feeds.manager?.available
     ? t('pendingRelease', { version: feeds.web.latestVersion })
     : t('updateNotification');
+  if (page === 'access' && fillSettings && status?.installed && status.access) {
+    const form = document.querySelector('#accessForm');
+    form.elements.mode.value = status.access.mode;
+    form.elements.host.value = status.access.host ?? '';
+    form.elements.acmeEmail.value = status.access.email ?? '';
+  }
   if (page === 'install') {
     const feed = feeds.web;
     document.querySelector('#installRelease').textContent = feed?.ready ? t('installRelease', { version: feed.version }) : releaseDescription(feed, 'web');
@@ -340,7 +346,7 @@ async function perform(action, input = {}, quiet = false) {
     await perform('status', {}, true);
     await perform('updates', {}, true);
   }
-  if (action === 'access' && lastOutput.kind === 'result') {
+  if (['access', 'start', 'stop', 'restart'].includes(action) && lastOutput.kind === 'result') {
     await perform('status', {}, true);
   }
   if (action === 'admin' && lastOutput.kind === 'result') {

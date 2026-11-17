@@ -28,7 +28,7 @@ class RuntimeTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
-        self.patches = [patch.object(worker, 'ROOT', self.root), patch.object(worker, 'APP', self.root / 'application'), patch.object(worker, 'STATE', self.root / 'state.json'), patch.object(worker, 'COMPOSE', self.root / 'compose.json')]
+        self.patches = [patch.object(worker, 'ROOT', self.root), patch.object(worker, 'APP', self.root / 'application'), patch.object(worker, 'STATE', self.root / 'state.json'), patch.object(worker, 'COMPOSE', self.root / 'compose.json'), patch.object(worker, 'RENEWAL_TIMER', self.root / 'renewal.timer')]
         for item in self.patches:
             item.start()
         worker.APP.mkdir()
@@ -125,7 +125,7 @@ class RuntimeTests(unittest.TestCase):
         request = {'release': {'version': '1.4.0', 'profiles': ['test']}, 'backup': {}}
         self.state['environment']['GAME_SERVER_PROFILE'] = 'test'
         worker.save_state(self.state)
-        with patch.object(worker, 'stage_release', return_value=staging), patch.object(worker, 'backup', return_value='/private/backup'), patch.object(worker, 'compose', side_effect=compose), patch.object(worker, 'initialize_storage'), patch.object(worker, 'write_configuration'):
+        with patch.object(worker, 'validate_backup_configuration'), patch.object(worker, 'stage_release', return_value=staging), patch.object(worker, 'backup', return_value='/private/backup'), patch.object(worker, 'compose', side_effect=compose), patch.object(worker, 'initialize_storage'), patch.object(worker, 'write_configuration'):
             with self.assertRaisesRegex(RuntimeError, 'Do not automatically roll back SQL'):
                 worker.update(request)
         record = json.loads(worker.STATE.read_text())
@@ -147,7 +147,7 @@ class RuntimeTests(unittest.TestCase):
             return ''
 
         request = {'release': {'version': '1.4.0', 'profiles': ['test']}, 'backup': {}}
-        with patch.object(worker, 'stage_release', return_value=staging), patch.object(worker, 'backup', return_value='/private/backup'), patch.object(worker, 'compose', side_effect=compose), patch.object(worker, 'initialize_storage'), patch.object(worker, 'write_configuration'):
+        with patch.object(worker, 'validate_backup_configuration'), patch.object(worker, 'stage_release', return_value=staging), patch.object(worker, 'backup', return_value='/private/backup'), patch.object(worker, 'compose', side_effect=compose), patch.object(worker, 'initialize_storage'), patch.object(worker, 'write_configuration'):
             worker.update(request)
         record = json.loads(worker.STATE.read_text())
         self.assertEqual(observed_versions, ['1.3.0'])
@@ -156,12 +156,119 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(record['environment']['APP_KEY'], 'original-key')
         self.assertIn('original-key', (worker.APP / '.env').read_text())
 
+    def test_update_preserves_actual_env_bytes_including_rotated_key_and_custom_values(self):
+        staging = self.root / 'staging/version'
+        staging.mkdir(parents=True)
+        original = b'# owner settings\r\nAPP_KEY=rotated-key\r\nCUSTOM_ENDPOINT="https://custom.example"\r\n'
+        (worker.APP / '.env').write_bytes(original)
+        self.state['environment']['GAME_SERVER_PROFILE'] = 'test'
+        worker.save_state(self.state)
+        request = {'release': {'version': '1.4.0', 'profiles': ['test']}, 'backup': {}}
+        with patch.object(worker, 'validate_backup_configuration'), patch.object(worker, 'stage_release', return_value=staging), patch.object(worker, 'backup', return_value='/private/backup'), patch.object(worker, 'compose', return_value=''), patch.object(worker, 'initialize_storage'), patch.object(worker.os, 'chown', create=True):
+            worker.update(request)
+        self.assertEqual((worker.APP / '.env').read_bytes(), original)
+
+    def test_access_change_preserves_custom_multiline_values_and_actual_app_key(self):
+        original = '# keep comments\nAPP_KEY=rotated-key\nCUSTOM="first\nAPP_URL=literal content\nlast"\nAPP_URL=http://localhost\n'
+        (worker.APP / '.env').write_text(original)
+        with patch.object(worker.os, 'chown', create=True):
+            self.state['access'] = worker.access_settings({'mode': 'ip', 'host': '192.0.2.10', 'httpAcknowledged': True})
+            worker.write_configuration(self.state)
+        result = (worker.APP / '.env').read_text()
+        self.assertIn('APP_KEY=rotated-key\n', result)
+        self.assertIn('CUSTOM="first\nAPP_URL=literal content\nlast"\n', result)
+        self.assertIn('APP_URL="http://192.0.2.10"', result)
+
+    def test_failed_access_change_restores_exact_config_files_instead_of_regenerating(self):
+        with patch.object(worker.os, 'chown', create=True):
+            worker.write_configuration(self.state)
+        originals = {worker.STATE: json.dumps(self.state, separators=(',', ':')).encode() + b'\n', worker.COMPOSE: b'{"services": {}}\n', worker.APP / '.env': b'APP_KEY=rotated-key\r\nCUSTOM=keep\r\n', self.root / 'nginx.conf': b'# private custom proxy settings\n'}
+        for file, content in originals.items():
+            file.write_bytes(content)
+        calls = 0
+
+        def compose(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError('changed proxy failed')
+            return ''
+
+        with patch.object(worker, 'compose', side_effect=compose), patch.object(worker.os, 'chown', create=True):
+            with self.assertRaisesRegex(RuntimeError, 'previous configuration restored'):
+                worker.apply_access(self.state, {'mode': 'ip', 'host': '192.0.2.10', 'httpAcknowledged': True})
+        for file, content in originals.items():
+            self.assertEqual(file.read_bytes(), content)
+
+    def test_ip_install_finishes_with_previously_confirmed_http_access(self):
+        self.state['access'] = worker.access_settings({'mode': 'ip', 'host': '192.0.2.5', 'httpAcknowledged': True})
+        self.state['phase'] = 'administrator-created'
+        worker.save_state(self.state)
+        with patch.object(worker, 'compose', return_value=''), patch.object(worker, 'diagnose_sql', return_value={'passed': True}), patch.object(worker.os, 'chown', create=True):
+            worker.finish_install(self.state, {})
+        self.assertEqual(worker.load_state()['phase'], 'ready')
+        self.assertEqual(worker.load_state()['access']['mode'], 'ip')
+
+    def test_failed_initial_domain_access_disables_newly_enabled_renewal_timer(self):
+        self.state['access'] = worker.access_settings({'mode': 'domain', 'host': 'mu.example.com', 'email': 'owner@example.com'})
+        worker.save_state(self.state)
+        with patch.object(worker.os, 'chown', create=True):
+            worker.write_configuration(self.state)
+        original = (worker.APP / '.env').read_bytes()
+        changes = []
+
+        def timer(enabled):
+            changes.append(enabled)
+            worker.RENEWAL_TIMER.write_text('test unit')
+
+        def compose(*args, **kwargs):
+            if '--wait-timeout' in args:
+                raise RuntimeError('new runtime unhealthy')
+            return ''
+
+        with patch.object(worker, 'compose', side_effect=compose), patch.object(worker, 'issue_certificate'), patch.object(worker, 'renewal_timer', side_effect=timer), patch.object(worker.os, 'chown', create=True):
+            with self.assertRaisesRegex(RuntimeError, 'Initial access setup failed'):
+                worker.apply_access(self.state, self.state['access'], initial=True)
+        self.assertEqual(changes, [True, False])
+        self.assertEqual((worker.APP / '.env').read_bytes(), original)
+
+    def test_access_recovery_failure_blocks_start_and_preserves_backup_reference(self):
+        with patch.object(worker.os, 'chown', create=True):
+            worker.write_configuration(self.state)
+            with patch.object(worker, 'compose', side_effect=RuntimeError('services failed')):
+                with self.assertRaisesRegex(RuntimeError, 'Access change and recovery failed'):
+                    worker.apply_access(self.state, {'mode': 'ip', 'host': '192.0.2.10', 'httpAcknowledged': True})
+        record = worker.load_state()
+        self.assertEqual(record['phase'], 'access-recovery-required')
+        self.assertTrue(Path(record['backup']).is_dir())
+        with self.assertRaisesRegex(ValueError, 'manual recovery'):
+            worker.dispatch({'action': 'start'})
+
+    def test_stale_sql_configuration_is_rejected_before_update_staging_or_maintenance(self):
+        current = {**self.state['environment'], 'DB_DATABASE': 'DifferentDatabase'}
+        response = json.dumps({'services': {'app': {'environment': current}}})
+        with patch.object(worker, 'compose', return_value=response) as compose, patch.object(worker, 'stage_release') as stage:
+            with self.assertRaisesRegex(ValueError, 'SQL targets or game profile differ'):
+                worker.update({'release': {'version': '1.4.0', 'profiles': []}})
+            stage.assert_not_called()
+            self.assertEqual(compose.call_args_list[0].args, ('config', '--format', 'json'))
+        self.assertEqual(worker.load_state()['phase'], 'ready')
+
+    def test_backup_configuration_allows_password_rotation_but_rejects_url_overrides(self):
+        current = {**self.state['environment'], 'DB_PASSWORD': 'rotated runtime password'}
+        with patch.object(worker, 'compose', return_value=json.dumps({'services': {'app': {'environment': current}}})):
+            worker.validate_backup_configuration(self.state)
+        current['DB_URL'] = 'sqlsrv://unrelated-target'
+        with patch.object(worker, 'compose', return_value=json.dumps({'services': {'app': {'environment': current}}})):
+            with self.assertRaisesRegex(ValueError, 'SQL targets or game profile differ'):
+                worker.validate_backup_configuration(self.state)
+
     def test_backup_credentials_only_cross_stdin_and_are_not_archived(self):
         requests = []
         worker.COMPOSE.write_text('{}')
         (self.root / 'nginx.conf').write_text('server {}')
         (self.root / 'certificates').mkdir()
-        with patch.object(worker, 'compose', side_effect=lambda *args, **kwargs: requests.append((args, kwargs)) or ''):
+        with patch.object(worker, 'compose', side_effect=lambda *args, **kwargs: json.dumps({'services': {'app': {'environment': self.state['environment']}}}) if args[:1] == ('config',) else requests.append((args, kwargs)) or ''):
             destination = worker.backup(self.state, {'username': 'backupadmin', 'password': 'temporary-secret', 'directory': 'D:\\Backups'})
         args, kwargs = requests[0]
         self.assertNotIn('temporary-secret', ' '.join(args))

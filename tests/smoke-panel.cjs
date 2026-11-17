@@ -12,6 +12,8 @@ let pending = false;
 let adminError = null;
 let runtimeInstalled = true;
 let runtimePhase = 'ready';
+let runtimeAccess = {mode:'local',host:'localhost',url:'http://localhost',email:''};
+let runtimeServiceState='running';
 let identities = [
   {id:1,name:'Owner',email:'owner@example.test',role:'administrator',is_active:true},
   {id:2,name:'Game Master',email:'gm@example.test',role:'game_master',is_active:true},
@@ -43,6 +45,8 @@ async function smoke() {
     if (action === 'setLanguage') {
       language = input.language;
     }
+    if (action === 'stop') runtimeServiceState='exited';
+    if (['start','restart'].includes(action)) runtimeServiceState='running';
     if (action === 'update') {
       installedVersion = '1.4.0';
     }
@@ -67,7 +71,7 @@ async function smoke() {
       sqlCopyPlan: { copied: true },
       settings: { cdn: 'https://cdn.interweb.bg', webChannel: 'muonline-web/releases/v1.3.0', managerChannel: 'muonline-web/manager/stable', trustedKeys: [], language },
       updates: { web: pending ? { latestVersion: '1.5.0', newTag: true, installedVersion, installationKnown: true, error: 'Release is not ready.', ready: false, available: false } : { version: '1.4.0', latestVersion: '1.4.0', installedVersion, installationKnown: true, ready: true, available: installedVersion !== '1.4.0', profiles: ['registry_profile'] }, manager: { error: 'Not published' } },
-      status: { installed: runtimeInstalled, phase: runtimePhase, version: installedVersion, access: { mode: 'local', url: 'http://localhost' } }
+      status: { installed: runtimeInstalled, phase: runtimePhase, version: installedVersion, access: runtimeAccess, services:JSON.stringify([{Service:'app',State:runtimeServiceState}]) }
     };
     return { ok: true, result: results[action] ?? 'Completed test operation' };
   });
@@ -242,6 +246,23 @@ async function smoke() {
     await idle();
     assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[data-action="openWebsite"]').disabled`),!installed || phase!=='ready');
     assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[data-action="openAdmin"]').disabled`),!installed || phase!=='ready');
+  }
+  runtimeAccess={mode:'domain',host:'mu.example.test',email:'owner@example.test',url:'https://mu.example.test'};
+  await window.webContents.executeJavaScript(`document.querySelector('[data-action="status"]').click()`);
+  await idle();
+  await window.webContents.executeJavaScript(`document.querySelector('[data-page="access"]').click()`);
+  assert.deepEqual(await window.webContents.executeJavaScript(`({mode:document.querySelector('#accessForm [name="mode"]').value,host:document.querySelector('#accessForm [name="host"]').value,email:document.querySelector('#accessForm [name="acmeEmail"]').value})`),{mode:'domain',host:'mu.example.test',email:'owner@example.test'});
+  await window.webContents.executeJavaScript(`document.querySelector('#accessForm [name="host"]').value='unsent.example.test'`);
+  await selectLanguage('bg');
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#accessForm [name="host"]').value`),'unsent.example.test');
+  await selectLanguage('en');
+  await window.webContents.executeJavaScript(`document.querySelector('[data-page="overview"]').click()`);
+  for (const action of ['stop','start','restart']) {
+    const beforeStatus=operations.filter(op=>op.action==='status').length;
+    await window.webContents.executeJavaScript(`document.querySelector('[data-action="${action}"]').click()`);
+    await idle();
+    assert.equal(operations.filter(op=>op.action==='status').length,beforeStatus+1);
+    assert.ok(await window.webContents.executeJavaScript(`document.querySelector('#statusDetail').textContent.includes('${action==='stop'?'stopped':'running'}')`));
   }
   console.log('PASS: all eight pages in EN/BG, support/company links, branding and compact navigation, SQL diagnostic evidence and explicit change confirmation, persistent language, preserved unsent fields, permanent donate footer, sandbox bridge, administrator form, password cleanup and check-only updates. Screenshots: artifacts/review/.');
 }

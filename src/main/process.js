@@ -7,8 +7,9 @@ export function execute(file, args, input = '', timeout = 1800000) {
     let output = '';
     let exceeded = false;
     const timer = setTimeout(() => child.kill(), timeout);
+    child.stdout.setEncoding('utf8');
     child.stdout.on('data', chunk => {
-      output += chunk.toString();
+      output += chunk;
       if (output.length > 4 * 1024 * 1024) {
         exceeded = true;
         child.kill();

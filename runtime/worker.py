@@ -21,6 +21,7 @@ ROOT = Path('/opt/muonline-web')
 APP = ROOT / 'application'
 STATE = ROOT / 'state.json'
 COMPOSE = ROOT / 'compose.json'
+RENEWAL_TIMER = Path('/etc/systemd/system/muonline-certificates.timer')
 
 
 def require(condition, message):
@@ -48,7 +49,7 @@ def atomic(path, content):
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(dir=path.parent)
     try:
-        with os.fdopen(descriptor, 'w') as stream:
+        with os.fdopen(descriptor, 'wb' if isinstance(content, bytes) else 'w') as stream:
             stream.write(content)
         os.chmod(temporary, 0o600)
         os.replace(temporary, path)
@@ -168,16 +169,69 @@ def compose_config(access):
     return {'services': services, 'volumes': {'redis-data': {}}}
 
 
-def write_configuration(state, tls=False):
+def update_access_environment(content, values):
+    """Replace only access keys, preserving comments and unrelated quoted multiline values."""
+    lines = content.splitlines(keepends=True)
+    result = []
+    seen = set()
+    index = 0
+    while index < len(lines):
+        statement = lines[index]
+        index += 1
+        match = re.match(r'^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(.*)', statement)
+        if match:
+            value = match[2]
+            if value.startswith(('"', "'")):
+                quote = value[0]
+                remainder = value[1:]
+                while True:
+                    # Skip escaped characters when locating the closing quote.
+                    if re.search(r'(?<!\\)(?:\\\\)*' + re.escape(quote), remainder):
+                        break
+                    require(index < len(lines), 'Site environment contains an unterminated quoted value.')
+                    remainder += lines[index]
+                    statement += lines[index]
+                    index += 1
+            if match[1] in values:
+                seen.add(match[1])
+                statement = env_text({match[1]: values[match[1]]})
+        result.append(statement)
+    text = ''.join(result)
+    missing = {key: value for key, value in values.items() if key not in seen}
+    if missing:
+        text += ('' if not text or text.endswith('\n') else '\n') + env_text(missing)
+    return text
+
+
+def write_configuration(state, tls=False, preserve_environment=False):
     """Write the site environment, reverse proxy and Docker project together."""
     access = state['access']
-    environment = dict(state['environment'])
-    environment.update(APP_URL=access['url'], SESSION_SECURE_COOKIE=str(access['mode'] == 'domain').lower(), SESSION_DOMAIN='null', SESSION_HTTP_ONLY='true', SESSION_SAME_SITE='lax')
-    atomic(APP / '.env', env_text(environment))
+    access_environment = dict(APP_URL=access['url'], SESSION_SECURE_COOKIE=str(access['mode'] == 'domain').lower(), SESSION_DOMAIN='null', SESSION_HTTP_ONLY='true', SESSION_SAME_SITE='lax')
+    environment_file = APP / '.env'
+    if preserve_environment:
+        require(environment_file.is_file(), 'Existing site environment is missing. Restore it before updating.')
+    elif environment_file.exists():
+        original = environment_file.read_bytes().decode('utf-8')
+        atomic(environment_file, update_access_environment(original, access_environment))
+    else:
+        atomic(environment_file, env_text({**state['environment'], **access_environment}))
     os.chown(APP / '.env', 33, 33)
     atomic(ROOT / 'nginx.conf', nginx_config(access, tls))
     os.chmod(ROOT / 'nginx.conf', 0o644)
     atomic(COMPOSE, json.dumps(compose_config(access), indent=2))
+
+
+def restore_access_configuration(backup):
+    """Restore the exact pre-change files instead of reconstructing them from stale state."""
+    for target in (COMPOSE, APP / '.env', ROOT / 'nginx.conf', STATE):
+        source = backup / target.name
+        if source.exists():
+            atomic(target, source.read_bytes())
+            os.chmod(target, stat.S_IMODE(source.stat().st_mode))
+        else:
+            target.unlink(missing_ok=True)
+    if (APP / '.env').exists():
+        os.chown(APP / '.env', 33, 33)
 
 
 def safe_extract(archive, destination, kind):
@@ -468,7 +522,8 @@ def finish_install(state, credentials):
         create_admin(credentials['administrator'])
         state['phase'] = 'administrator-created'
         save_state(state)
-    apply_access(state, state['access'], initial=True)
+    # Initial IP mode was already explicitly confirmed before the installation state was saved.
+    apply_access(state, {**state['access'], 'httpAcknowledged': state['access']['mode'] == 'ip'}, initial=True)
     save_state(dict(state, phase='ready'))
     return 'Installation complete. Bootstrap credentials removed. Game writes remain disabled.'
 
@@ -484,7 +539,7 @@ def renewal_timer(enabled):
         run(['systemctl', 'disable', '--now', 'muonline-certificates.timer'])
         return
     atomic('/etc/systemd/system/muonline-certificates.service', '[Unit]\nDescription=MuOnline Web certificate renewal\nAfter=docker.service\n[Service]\nType=oneshot\nExecStart=/usr/bin/docker compose -p muonline-manager -f /opt/muonline-web/compose.json run --rm certbot renew --webroot -w /var/www/certbot --quiet\nExecStart=/usr/bin/docker compose -p muonline-manager -f /opt/muonline-web/compose.json exec -T nginx nginx -s reload\n')
-    atomic('/etc/systemd/system/muonline-certificates.timer', '[Unit]\nDescription=MuOnline certificate renewal schedule\n[Timer]\nOnCalendar=*-*-* 03,15:00:00\nRandomizedDelaySec=3600\nPersistent=true\n[Install]\nWantedBy=timers.target\n')
+    atomic(RENEWAL_TIMER, '[Unit]\nDescription=MuOnline certificate renewal schedule\n[Timer]\nOnCalendar=*-*-* 03,15:00:00\nRandomizedDelaySec=3600\nPersistent=true\n[Install]\nWantedBy=timers.target\n')
     run(['systemctl', 'daemon-reload'])
     run(['systemctl', 'enable', '--now', 'muonline-certificates.timer'])
 
@@ -509,7 +564,7 @@ def apply_access(state, settings, initial=False):
             compose('up', '-d', '--force-recreate', 'nginx')
             compose('exec', '-T', 'nginx', 'nginx', '-t')
             renewal_timer(True)
-        elif Path('/etc/systemd/system/muonline-certificates.timer').exists():
+        elif RENEWAL_TIMER.exists():
             renewal_timer(False)
         compose('exec', '-T', 'app', 'php', 'artisan', 'config:clear', '--no-interaction')
         compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
@@ -518,20 +573,25 @@ def apply_access(state, settings, initial=False):
     except Exception:
         state.clear()
         state.update(previous)
-        if initial:
-            write_configuration(previous, tls=False)
-            save_state(previous)
-            raise RuntimeError('Initial access setup failed. Installation state was preserved; use Resume installation after correcting DNS/firewall. Backup: ' + str(backup)) from None
-        write_configuration(previous, tls=previous['access']['mode'] == 'domain')
         try:
-            compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
-            compose('exec', '-T', 'app', 'php', 'artisan', 'config:clear', '--no-interaction')
-            compose('restart', 'app', 'queue', 'scheduler')
-            if previous['access']['mode'] == 'domain' and not initial:
-                renewal_timer(True)
+            restore_access_configuration(backup)
+            if initial:
+                if RENEWAL_TIMER.exists():
+                    renewal_timer(False)
+            else:
+                compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
+                compose('exec', '-T', 'app', 'php', 'artisan', 'config:clear', '--no-interaction')
+                compose('restart', 'app', 'queue', 'scheduler')
+                if previous['access']['mode'] == 'domain':
+                    renewal_timer(True)
+                elif RENEWAL_TIMER.exists():
+                    renewal_timer(False)
         except Exception:
+            with contextlib.suppress(Exception):
+                save_state(dict(previous, phase='access-recovery-required', backup=str(backup)))
             raise RuntimeError('Access change and recovery failed. Restore the private configuration backup: ' + str(backup)) from None
-        save_state(previous)
+        if initial:
+            raise RuntimeError('Initial access setup failed. Installation state was preserved; use Resume installation after correcting DNS/firewall. Backup: ' + str(backup)) from None
         raise RuntimeError('Access change failed; previous configuration restored. Backup: ' + str(backup)) from None
     return 'Access configuration applied: ' + access['url']
 
@@ -553,8 +613,21 @@ echo "SQL backups verified.\n";
 '''
 
 
+def validate_backup_configuration(state):
+    """Refuse stale SQL targets before backing up or putting a site into update maintenance."""
+    try:
+        configuration = json.loads(compose('config', '--format', 'json'))
+        current = configuration['services']['app']['environment']
+        require(isinstance(current, dict), 'Invalid runtime configuration.')
+    except (ValueError, KeyError, TypeError):
+        raise RuntimeError('Cannot verify SQL targets before backup or update. Check application configuration.') from None
+    keys = ('DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'GAME_DB_CONNECTION', 'GAME_DB_HOST', 'GAME_DB_PORT', 'GAME_DB_MUONLINE', 'GAME_SERVER_PROFILE')
+    require(not current.get('DB_URL') and all(str(current.get(key, '')) == str(state['environment'][key]) for key in keys if key in state['environment']), 'SQL targets or game profile differ from the saved installation. Reconcile the runtime configuration before backup or update.')
+
+
 def backup(state, credentials):
     """Create verified native SQL backups plus a private archive of site data and configuration."""
+    validate_backup_configuration(state)
     directory = single_line(credentials['directory'])
     require(re.fullmatch(r'[A-Za-z]:\\[A-Za-z0-9_\\ .-]+|/[A-Za-z0-9_/. -]+', directory) and '..' not in directory, 'Use an absolute backup directory on the SQL Server host.')
     stamp = datetime.datetime.now(datetime.UTC).strftime('%Y%m%dT%H%M%S') + '-' + secrets.token_hex(4)
@@ -598,6 +671,7 @@ def update(request):
     """Stage a release, back up SQL/data, migrate explicitly and preserve mutable site content."""
     state = load_state()
     require(state.get('phase') == 'ready', 'Recover the incomplete installation before updating.')
+    validate_backup_configuration(state)
     version = request['release']['version']
     require(tuple(map(int, version.split('.'))) > tuple(map(int, state['version'].split('.'))), 'Release is not newer than installed application.')
     require(state['environment']['GAME_SERVER_PROFILE'] in request['release']['profiles'], 'Update removes the installed game profile.')
@@ -621,7 +695,7 @@ def update(request):
         APP.rename(old)
         staging.rename(APP)
         initialize_storage()
-        write_configuration(state, tls=state['access']['mode'] == 'domain')
+        write_configuration(state, tls=state['access']['mode'] == 'domain', preserve_environment=True)
         compose('build', 'app')
         save_state(dict(state, phase='migration-recovery-required', attemptedVersion=version, backup=backup_path))
         migration_started = True
@@ -643,7 +717,7 @@ def update(request):
                     failed = ROOT / ('failed-' + secrets.token_hex(4))
                     APP.rename(failed)
                 old.rename(APP)
-                write_configuration(state, tls=state['access']['mode'] == 'domain')
+                write_configuration(state, tls=state['access']['mode'] == 'domain', preserve_environment=True)
                 compose('build', 'app')
             compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
             compose('exec', '-T', 'app', 'php', 'artisan', 'up', '--no-interaction')

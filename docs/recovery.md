@@ -43,16 +43,24 @@ it through another first install. Do not repeat provisioning against unrelated d
 
 Each change saves state.json, compose.json, .env and nginx.conf under
 `backups/access-<timestamp>-<nonce>/`. Ordinary validation failures change nothing.
-Runtime/ACME/health failures restore the previous generated configuration and recreate
+Runtime/ACME/health failures restore the exact backed-up configuration files and recreate
 the services. An explicit error identifies when recovery also failed. Inspect the
 private backup and DNS/ports, then restore matching state/.env/Compose/nginx files
 and restart the project. Preserve certificate directories; they are domain-specific.
-APP_ENV and APP_KEY are never changed by an access switch.
+APP_ENV and APP_KEY are never changed by an access switch. Existing unrelated `.env`
+values and comments are retained; only URL/cookie keys belong to access changes.
+If restoration or service recovery fails, state is marked `access-recovery-required`
+when it can be written, with a private backup path. Start and web updates remain
+blocked until the matching files/services have been recovered manually.
 
 Initial SSL setup has no prior working SSL configuration; it keeps the incomplete
 installation state and offers resume instead of claiming a successful rollback.
 
 ## Backups
+
+Before backup/update, resolved SQL targets and game profile must match the saved
+installation. A drift or DB_URL override stops update before maintenance or staging;
+reconcile the intended database configuration instead of dismissing the check.
 
 The panel requests temporary SQL authorization for every backup/update. Native
 COPY_ONLY/CHECKSUM backups are created for both application and game databases and
@@ -78,7 +86,7 @@ APP_KEY and encrypted data before bringing traffic back.
 
 The sequence is download/authenticate → safe staging → maintenance → stop background
 workers → native SQL and full file backup → preserve .env/storage/custom themes →
-release switch → build PHP runtime → forced migrations → clear caches → wait for
+release switch (preserving the actual .env bytes) → build PHP runtime → forced migrations → clear caches → wait for
 services → leave maintenance. Unmodified shipped themes update; user-added or modified
 theme files are overlaid from the previous install. That can require manual merges
 when a custom template conflicts with new application behavior.

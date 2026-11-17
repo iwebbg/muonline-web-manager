@@ -36,6 +36,7 @@ artifacts without publishing. It can run after the branch is pushed by an operat
 - [SQL Troubleshooting: EN/BG diagnostics and Windows VM checks](docs/sql-troubleshooting.md)
 - [Recovery and operational limits](docs/recovery.md)
 - [Acceptance checklist and local evidence](docs/review.md)
+- [Audit findings and corrections](docs/audit-2026-11-17.md)
 - [Project maintenance skill](skills/muonline-manager/SKILL.md)
 
 Production release signing requires an operator-owned Ed25519 key, its public key

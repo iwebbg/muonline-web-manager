@@ -2,6 +2,10 @@ import { resolveLocale, translate } from './i18n.js';
 
 /** Known application messages only. Arbitrary logs and SQL diagnostics are not translated. */
 const bulgarian = {
+  "Cannot verify SQL targets before backup or update. Check application configuration.": "SQL връзките не могат да бъдат проверени преди архивиране или обновяване. Проверете конфигурацията на приложението.",
+  "SQL targets or game profile differ from the saved installation. Reconcile the runtime configuration before backup or update.": "SQL връзките или game профилът се различават от запазената инсталация. Съгласувайте конфигурацията преди архивиране или обновяване.",
+  "Site environment contains an unterminated quoted value.": "В конфигурацията на сайта има незатворена кавичка. Поправете файла преди промяна на достъпа.",
+  "Existing site environment is missing. Restore it before updating.": "Конфигурацията на сайта липсва. Възстановете я преди обновяване.",
   "Complete installation and check website status first.": "Завършете инсталацията и проверете състоянието на сайта.",
   "Installed website address is invalid. Check access settings.": "Адресът на инсталирания сайт е невалиден. Проверете настройките за достъп.",
   "Administrator not found.": "Администраторът не е намерен.",

@@ -209,3 +209,13 @@ fresh status at each click and never accepts renderer-supplied destinations. Tes
 cover origin changes, unsafe URI rejection, uninstalled/incomplete states and both UI
 buttons. Access changes refresh status. Browser launch uses Electron shell.openExternal;
 actual Windows default-browser execution remains a VM acceptance check.
+
+## Audit follow-up — 2026-11-17
+
+[The audit report](audit-2026-11-17.md) records eight corrected defects, including
+initial IP consent, .env/APP_KEY preservation, exact access restoration, SQL target
+drift protection, renewal/recovery state, current access fields, service status refresh
+and UTF-8 pipe decoding. Verification: 39 Node + 39 Python tests, eight-page EN/BG UI,
+real dotenv parsing and Compose resolution, isolated release/nginx validation and Linux
+packaging passed. npm audit reported zero known vulnerabilities. Windows/WSL/ACME
+acceptance remains required; no production data or sibling Laravel source was changed.

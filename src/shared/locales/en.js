@@ -439,5 +439,6 @@ export default {
   "openWebsite": "Open Website",
   "openAdmin": "Open Admin Panel",
   "openedInBrowser": "Opened in your default browser.",
-  "websiteLinksHint": "Available after installation completes and the website status has been checked."
+  "websiteLinksHint": "Available after installation completes and the website status has been checked.",
+  "phase.access-recovery-required": "Access configuration needs manual recovery"
 };
