@@ -152,6 +152,16 @@ export function translateMessage(locale, message) {
   if (Object.hasOwn(bulgarian, message)) {
     return bulgarian[message];
   }
+  const archive = /^Archive contains protected runtime data \((application|vendor): (\.env|\.git|node_modules|storage)\)\.$/.exec(message);
+  if (archive) {
+    return 'Архивът съдържа защитени runtime данни (' + archive[1] + ': ' + archive[2] + '). Release пакетът трябва да бъде коригиран; не е нужна нова SQL база.';
+  }
+  const docker = /^Docker operation failed: ([a-z]+) \(exit (\d+|timeout); reason ([a-zA-Z]+)(?:; Dockerfile line (\d+))?\)\. Output withheld to protect credentials\.$/.exec(message);
+  if (docker) {
+    const operations = { build: 'изграждане на образа', start: 'стартиране на контейнерите', bootstrap: 'SQL bootstrap', exec: 'команда в контейнер', status: 'статус', logs: 'логове', run: 'еднократен контейнер', compose: 'Compose', command: 'Docker команда' };
+    const reasons = { diskSpace: 'няма свободно дисково пространство', daemon: 'Docker daemon е недостъпен', network: 'мрежа/DNS/TLS', imageMissing: 'липсващ или недостъпен Docker образ', buildTarget: 'липсва Docker build target', dockerfile: 'липсва Dockerfile', buildContext: 'липсва файл в build контекста', portBusy: 'портът е зает', unhealthy: 'контейнерът не е healthy', composeConfig: 'невалидна Compose/env конфигурация', unsupportedOption: 'неподдържана опция', sqlLogin: 'SQL отказва входа', permission: 'отказан достъп', buildStep: 'неуспешна build стъпка', timeout: 'изтекло време', unknown: 'неустановена' };
+    if (operations[docker[1]] && reasons[docker[3]]) return 'Docker: ' + operations[docker[1]] + ' — код ' + docker[2] + ', причина: ' + reasons[docker[3]] + (docker[4] ? ', Dockerfile ред ' + docker[4] : '') + '. Изходът е скрит за защита на паролите.';
+  }
   for (const [english, localized] of prefixes) {
     if (message.startsWith(english)) {
       return localized + message.slice(english.length);

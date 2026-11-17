@@ -1,6 +1,7 @@
 """Privileged WSL runtime. Only fixed operations are accepted; input is JSON on stdin."""
 import base64
 import contextlib
+import configparser
 import datetime
 import hashlib
 import ipaddress
@@ -15,6 +16,8 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
+import urllib.parse
 import zipfile
 
 ROOT = Path('/opt/muonline-web')
@@ -22,6 +25,150 @@ APP = ROOT / 'application'
 STATE = ROOT / 'state.json'
 COMPOSE = ROOT / 'compose.json'
 RENEWAL_TIMER = Path('/etc/systemd/system/muonline-certificates.timer')
+WSL_CONFIG = Path('/etc/wsl.conf')
+OS_RELEASE = Path('/etc/os-release')
+PID_ONE = Path('/proc/1/comm')
+DEVELOPMENT_DIAGNOSTICS = False
+RECORD_DIAGNOSTICS = False
+DIAGNOSTIC_SECRETS = set()
+DIAGNOSTIC_ACTION = ''
+
+
+def diagnostic_secrets(value):
+    """Collect known secrets recursively without saving the request or private state."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if isinstance(item, str) and item and (re.search(r'password|secret|token|key', key, re.I) or key == 'sqlAdmin'):
+                DIAGNOSTIC_SECRETS.add(item)
+            else:
+                diagnostic_secrets(item)
+    elif isinstance(value, list):
+        for item in value:
+            diagnostic_secrets(item)
+
+
+def redact_development_output(value):
+    """Keep detailed dev errors while removing known passwords and common connection strings."""
+    text = value.decode('utf-8', errors='replace') if isinstance(value, bytes) else str(value or '')
+    try:
+        if STATE.exists():
+            diagnostic_secrets(json.loads(STATE.read_text()))
+    except (OSError, ValueError):
+        pass
+    variants = set()
+    for secret in DIAGNOSTIC_SECRETS:
+        variants.update((secret, json.dumps(secret)[1:-1], secret.replace("'", "''"), urllib.parse.quote(secret, safe=''), urllib.parse.quote_plus(secret), base64.b64encode(secret.encode()).decode()))
+    for secret in sorted(variants, key=len, reverse=True):
+        if len(secret) < 4:
+            text = re.sub(r'(?<!\w)' + re.escape(secret) + r'(?!\w)', '[REDACTED]', text)
+        else:
+            text = text.replace(secret, '[REDACTED]')
+    text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', text)
+    text = re.sub(r'(?i)([a-z][a-z0-9+.-]*://)[^\s/@:]+:[^\s/@]+@', r'\1[REDACTED]@', text)
+    return re.sub(r'(?im)\b(password|pwd|token|secret|app_key)\b\s*(?:=>|=|:)\s*[^\r\n;,]+', r'\1=[REDACTED]', text)
+
+
+def development_log(event, arguments, **details):
+    """Dev-only, bounded root-private JSONL. Never record argv/stdin or unredacted output."""
+    if not (DEVELOPMENT_DIAGNOSTICS or RECORD_DIAGNOSTICS):
+        return
+    operation = 'command'
+    if arguments and arguments[0] == 'docker':
+        operation = docker_failure(arguments, 0).split(': ', 1)[1].split(' ', 1)[0]
+    elif arguments:
+        operation = Path(arguments[0]).name
+    entry = {'time': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'action': DIAGNOSTIC_ACTION, 'event': event, 'operation': operation}
+    for key in ('stdout', 'stderr'):
+        if key in details:
+            entry[key] = redact_development_output(details[key])[-100000:]
+    for key in ('exitCode', 'elapsedSeconds', 'errorType'):
+        if key in details:
+            entry[key] = details[key]
+    try:
+        directory = ROOT / 'diagnostics'
+        directory.mkdir(mode=0o700, exist_ok=True)
+        os.chmod(directory, 0o700)
+        logfile = directory / 'runtime.jsonl'
+        encoded = json.dumps(entry, ensure_ascii=True) + '\n'
+        if logfile.exists() and logfile.stat().st_size + len(encoded) > 2 * 1024 * 1024:
+            os.replace(logfile, directory / 'runtime.previous.jsonl')
+        with logfile.open('a', encoding='utf-8') as stream:
+            os.chmod(logfile, 0o600)
+            stream.write(encoded)
+    except OSError:
+        # Diagnostics must not change deployment/recovery outcomes.
+        pass
+
+
+def development_logs():
+    """Return only recorded, redacted dev diagnostics; production cannot access this endpoint."""
+    require(DEVELOPMENT_DIAGNOSTICS, 'Development diagnostics are disabled.')
+    return runtime_logs()
+
+
+def runtime_logs():
+    """Read redacted support diagnostics; enabled only by the trusted main process."""
+    require(RECORD_DIAGNOSTICS or DEVELOPMENT_DIAGNOSTICS, 'Runtime diagnostics are disabled.')
+    entries = []
+    for name in ('runtime.previous.jsonl', 'runtime.jsonl'):
+        logfile = ROOT / 'diagnostics' / name
+        if logfile.exists():
+            for line in logfile.read_text(encoding='utf-8').splitlines():
+                try:
+                    entries.append(json.loads(line))
+                except ValueError:
+                    continue
+    selected = []
+    size = 0
+    for entry in reversed(entries):
+        rendered = '[' + entry['time'] + '] ' + entry['action'] + ' / ' + entry['operation'] + ' / ' + entry['event']
+        if 'exitCode' in entry:
+            rendered += ' / exit ' + str(entry['exitCode']) + ' / ' + str(entry.get('elapsedSeconds', 0)) + 's'
+        for key in ('stdout', 'stderr'):
+            if entry.get(key):
+                rendered += '\n' + key + ':\n' + entry[key]
+        if size + len(rendered) > 600000:
+            break
+        selected.append(rendered)
+        size += len(rendered)
+    return '\n\n'.join(reversed(selected)) or 'No runtime logs recorded yet. Retry the operation with the updated manager first.'
+
+
+def ensure_linux_user():
+    """Create a fixed local account with a locked password; do not change existing passwords."""
+    import pwd
+    try:
+        account = pwd.getpwnam('muonline')
+    except KeyError:
+        run(['useradd', '--create-home', '--user-group', '--shell', '/bin/bash', 'muonline'])
+        account = pwd.getpwnam('muonline')
+    require(account.pw_uid >= 1000, 'The muonline Linux account conflicts with a system account.')
+    return account.pw_name
+
+
+def prepare_wsl():
+    """Idempotently prepare Ubuntu via explicit WSL root/exec, without interactive OOBE."""
+    release = dict(line.split('=', 1) for line in OS_RELEASE.read_text().splitlines() if '=' in line)
+    require(release.get('ID', '').strip('"') == 'ubuntu' and release.get('VERSION_ID', '').strip('"') == '24.04', 'Ubuntu 24.04 is required.')
+    require(run(['uname', '-m']).strip() == 'x86_64', 'This runtime requires x64 WSL.')
+    username = ensure_linux_user()
+    config = configparser.RawConfigParser()
+    original = WSL_CONFIG.read_text() if WSL_CONFIG.exists() else ''
+    config.read_string(original)
+    if not config.has_section('boot'):
+        config.add_section('boot')
+    if config.get('boot', 'systemd', fallback='false').lower() != 'true':
+        # Preserve all options and retain the original file (including comments) for recovery.
+        backup = ROOT / 'wsl.conf.before-manager'
+        if not backup.exists():
+            atomic(backup, original)
+        config.set('boot', 'systemd', 'true')
+        import io
+        text = io.StringIO()
+        config.write(text)
+        atomic(WSL_CONFIG, text.getvalue())
+        os.chmod(WSL_CONFIG, 0o644)
+    return {'linuxUser': username, 'restartRequired': PID_ONE.read_text().strip() != 'systemd'}
 
 
 def require(condition, message):
@@ -30,10 +177,59 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def docker_failure(arguments, code, output='', timed_out=False):
+    """Return fixed diagnostic categories only; never echo argv, stdin or dependency output."""
+    operation = 'command'
+    if arguments[:2] == ['docker', 'compose']:
+        index = 6 if arguments[2:3] == ['--project-name'] else 2
+        verb = arguments[index] if len(arguments) > index else ''
+        operation = {'build': 'build', 'up': 'start', 'run': 'bootstrap' if '--env-from-file' in arguments else 'run', 'exec': 'exec', 'ps': 'status', 'logs': 'logs'}.get(verb, 'compose')
+    reason = 'unknown'
+    patterns = [
+        ('diskSpace', r'no space left on device'),
+        ('daemon', r'cannot connect to the docker daemon|is the docker daemon running'),
+        ('network', r'temporary failure resolving|could not resolve|no such host|tls handshake timeout|network is unreachable|i/o timeout'),
+        ('imageMissing', r'manifest unknown|manifest for .+ not found|no matching manifest|pull access denied'),
+        ('buildTarget', r'target stage .+ could not be found|target .+ could not be found'),
+        ('dockerfile', r'failed to read dockerfile|cannot locate specified dockerfile'),
+        ('buildContext', r'failed to calculate checksum|not found in build context|excluded by .dockerignore'),
+        ('portBusy', r'port is already allocated|address already in use'),
+        ('unhealthy', r'container .+ is unhealthy|dependency failed to start'),
+        ('composeConfig', r'validating .+compose|invalid interpolation|failed to read .+env|no such service'),
+        ('unsupportedOption', r'unknown flag:|unknown shorthand flag:'),
+        ('sqlLogin', r'login failed for user|sqlstate\[28000\]'),
+        ('permission', r'permission denied'),
+        ('buildStep', r'failed to solve|did not complete successfully'),
+    ]
+    for candidate, expression in patterns:
+        if re.search(expression, output, re.I):
+            reason = candidate
+            break
+    if timed_out:
+        reason = 'timeout'
+    line = re.search(r'^Dockerfile:(\d{1,6})\s*$', output, re.M)
+    location = '; Dockerfile line ' + line[1] if line else ''
+    return 'Docker operation failed: ' + operation + ' (exit ' + str(code) + '; reason ' + reason + location + '). Output withheld to protect credentials.'
+
+
 def run(arguments, *, data=None, timeout=1800, allow_failure=False):
     """Execute argument arrays without a shell and suppress potentially secret diagnostics."""
-    result = subprocess.run(arguments, input=data, text=True, capture_output=True, timeout=timeout)
+    started = time.monotonic()
+    development_log('start', arguments)
+    try:
+        result = subprocess.run(arguments, input=data, text=True, capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        development_log('timeout', arguments, exitCode='timeout', elapsedSeconds=round(time.monotonic() - started, 3), stdout=error.stdout, stderr=error.stderr)
+        if arguments[0] == 'docker':
+            raise RuntimeError(docker_failure(arguments, 'timeout', timed_out=True)) from None
+        raise RuntimeError('Runtime command timed out: ' + arguments[0]) from None
+    except OSError as error:
+        development_log('error', arguments, errorType=type(error).__name__, elapsedSeconds=round(time.monotonic() - started, 3))
+        raise
+    development_log('finish', arguments, exitCode=result.returncode, elapsedSeconds=round(time.monotonic() - started, 3), stdout=result.stdout, stderr=result.stderr)
     if result.returncode and not allow_failure:
+        if arguments[0] == 'docker':
+            raise RuntimeError(docker_failure(arguments, result.returncode, (result.stdout or '') + '\n' + (result.stderr or '')))
         raise RuntimeError('Runtime command failed: ' + arguments[0] + ' (exit ' + str(result.returncode) + '). Check runtime diagnostics; output is withheld to protect credentials.')
     return result.stdout[-200000:]
 
@@ -170,7 +366,7 @@ def compose_config(access):
 
 
 def update_access_environment(content, values):
-    """Replace only access keys, preserving comments and unrelated quoted multiline values."""
+    """Replace only explicitly selected keys, preserving comments and unrelated multiline values."""
     lines = content.splitlines(keepends=True)
     result = []
     seen = set()
@@ -201,6 +397,71 @@ def update_access_environment(content, values):
     if missing:
         text += ('' if not text or text.endswith('\n') else '\n') + env_text(missing)
     return text
+
+
+def game_write_mode():
+    """Read only the two literal safety flags from the actual dotenv file; never evaluate it."""
+    file = APP / '.env'
+    if not file.exists():
+        return 'unknown'
+    content = file.read_bytes().decode('utf-8')
+    flags = {}
+    for key in ('GAME_DB_READONLY', 'GAME_WRITES_ENABLED'):
+        matches = re.findall(r'^\s*' + key + r'\s*=\s*(true|false|"true"|"false"|\'true\'|\'false\')\s*(?:#[^\r\n]*)?$', content, re.M | re.I)
+        if len(matches) != 1:
+            return 'unknown'
+        flags[key] = matches[0].strip('"\'').lower()
+    if flags == {'GAME_DB_READONLY': 'false', 'GAME_WRITES_ENABLED': 'true'}:
+        return 'enabled'
+    if flags == {'GAME_DB_READONLY': 'true', 'GAME_WRITES_ENABLED': 'false'}:
+        return 'disabled'
+    return 'unknown'
+
+
+def apply_game_writes(state, settings):
+    """Change only game write flags, recreate the project, and recover exact config on failure."""
+    require(state.get('phase') == 'ready', 'Recover installation before changing game writes.')
+    require(isinstance(settings, dict) and type(settings.get('enabled')) is bool and settings.get('confirmed') is True, 'Confirm the game write change and project restart.')
+    current = game_write_mode()
+    require(settings.get('expectedMode') == current, 'Game write settings changed. Refresh status and confirm again.')
+    target = 'enabled' if settings['enabled'] else 'disabled'
+    if current == target:
+        return {'gameWrites': target, 'restarted': False}
+    envfile = APP / '.env'
+    require(envfile.exists(), 'Existing site environment is missing. Restore it before changing game writes.')
+    previous = json.loads(json.dumps(state))
+    backup = ROOT / 'backups' / ('game-writes-' + datetime.datetime.now(datetime.UTC).strftime('%Y%m%dT%H%M%S') + '-' + secrets.token_hex(3))
+    backup.mkdir(parents=True)
+    for source in (STATE, envfile):
+        shutil.copy2(source, backup / source.name)
+    flags = {'GAME_DB_READONLY': 'false' if settings['enabled'] else 'true', 'GAME_WRITES_ENABLED': 'true' if settings['enabled'] else 'false'}
+    save_state(dict(previous, phase='game-writes-changing', recoveryBackup=str(backup)))
+
+    def restart_project():
+        # A plain docker restart does not reread env_file. Bypass the bootstrap entrypoint.
+        compose('run', '--rm', '--no-deps', '--entrypoint', 'php', 'app', 'artisan', 'config:clear', '--no-interaction')
+        compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
+
+    try:
+        atomic(envfile, update_access_environment(envfile.read_bytes().decode('utf-8'), flags))
+        os.chown(envfile, 33, 33)
+        require(game_write_mode() == target, 'Game write flags are duplicated or invalid. Restore a consistent site environment.')
+        state['environment'].update(flags)
+        restart_project()
+        save_state(dict(state, phase='ready'))
+        return {'gameWrites': target, 'restarted': True}
+    except Exception:
+        try:
+            atomic(envfile, (backup / '.env').read_bytes())
+            os.chown(envfile, 33, 33)
+            atomic(STATE, (backup / STATE.name).read_bytes())
+            restart_project()
+            state.clear()
+            state.update(previous)
+        except Exception:
+            save_state(dict(previous, phase='game-writes-recovery-required', recoveryBackup=str(backup)))
+            raise RuntimeError('Game write change and recovery failed. Recover configuration manually. Backup: ' + str(backup)) from None
+        raise RuntimeError('Game write change failed; previous configuration restored. Backup: ' + str(backup)) from None
 
 
 def write_configuration(state, tls=False, preserve_environment=False):
@@ -248,7 +509,8 @@ def safe_extract(archive, destination, kind):
             seen.add(str(path))
             mode = member.external_attr >> 16
             require(stat.S_IFMT(mode) in (0, stat.S_IFREG, stat.S_IFDIR), 'Archive links and special files are forbidden.')
-            require(path.parts[0] not in ('.env', '.git', 'node_modules', 'storage'), 'Archive contains protected runtime data.')
+            # Report only a fixed protected root, never file contents or arbitrary archive paths.
+            require(path.parts[0] not in ('.env', '.git', 'node_modules', 'storage'), 'Archive contains protected runtime data (' + kind + ': ' + path.parts[0] + ').')
             if kind == 'vendor':
                 require(path.parts[0] == 'vendor', 'Vendor archive must contain vendor/ only.')
             else:
@@ -299,6 +561,10 @@ def initialize_storage():
         run(['chmod', '-R', 'u+rwX,go+rX', str(directory)])
     for relative in ('storage', 'storage/app', 'storage/framework', 'storage/framework/cache', 'bootstrap'):
         os.chmod(APP / relative, 0o755)
+        if relative != 'bootstrap':
+            # The entrypoint runs as www-data and chmods these parents too; write access
+            # to their children is insufficient when the parents still belong to root.
+            os.chown(APP / relative, 33, 33)
     link = APP / 'public/storage'
     if not link.exists() and not link.is_symlink():
         link.symlink_to('../storage/app/public')
@@ -733,6 +999,15 @@ def update(request):
 def dispatch(request):
     """Expose an explicit runtime operation allow-list, with no arbitrary command endpoint."""
     action = request.get('action')
+    if action == 'runtimeLogs':
+        return runtime_logs()
+    if action == 'developmentLogs' or (action == 'logs' and DEVELOPMENT_DIAGNOSTICS):
+        return development_logs()
+    if action == 'prepareWsl':
+        return prepare_wsl()
+    if action == 'linuxStatus':
+        require(PID_ONE.read_text().strip() == 'systemd', 'WSL systemd is not running after the distribution restart.')
+        return {'systemd': True}
     if action == 'prerequisites':
         require(run(['uname', '-m']).strip() == 'x86_64', 'This runtime release requires x64 WSL. ARM64 is not supported yet.')
         require('--env-from-file' in run(['docker', 'compose', 'run', '--help']), 'Upgrade Docker Compose; --env-from-file support is required.')
@@ -749,9 +1024,14 @@ def dispatch(request):
         except RuntimeError as exception:
             services = '[]'
             error = str(exception)
-        return {'installed': True, 'version': state['version'], 'phase': state.get('phase'), 'access': state['access'], 'services': services, 'runtimeError': error}
+        return {'installed': True, 'version': state['version'], 'phase': state.get('phase'), 'access': state['access'], 'gameWrites': game_write_mode(), 'services': services, 'runtimeError': error}
     state = load_state()
+    if action == 'setGameWrites':
+        return apply_game_writes(state, request.get('gameWrites'))
     if action == 'resumeInstall':
+        # Repair manager-created directory ownership from earlier interrupted installs
+        # before the non-root entrypoint runs again. Preserve all existing storage data.
+        initialize_storage()
         return finish_install(state, request['settings'])
     if action in ('start', 'stop', 'restart'):
         require(state.get('phase') == 'ready', 'Installation requires manual recovery. Consult the recovery guide.')
@@ -787,6 +1067,7 @@ def dispatch(request):
 def main():
     """Serialize privileged operations and return sanitized protocol messages."""
     import fcntl
+    global DEVELOPMENT_DIAGNOSTICS, RECORD_DIAGNOSTICS, DIAGNOSTIC_ACTION
 
     os.umask(0o077)
     ROOT.mkdir(parents=True, exist_ok=True)
@@ -795,9 +1076,20 @@ def main():
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             request = json.load(sys.stdin)
-            print(json.dumps({'ok': True, 'result': dispatch(request)}))
+            DEVELOPMENT_DIAGNOSTICS = request.get('developmentDiagnostics') is True
+            RECORD_DIAGNOSTICS = request.get('recordDiagnostics') is True
+            DIAGNOSTIC_ACTION = request.get('action') if request.get('action') in ('install', 'resumeInstall', 'setGameWrites', 'prepareWsl', 'linuxStatus', 'prerequisites', 'status', 'logs', 'developmentLogs', 'start', 'stop', 'restart', 'update', 'backup', 'admin', 'adminList', 'adminUpdate', 'adminDelete', 'doctor', 'access') else 'unknown'
+            if DEVELOPMENT_DIAGNOSTICS or RECORD_DIAGNOSTICS:
+                diagnostic_secrets(request)
+            response = {'ok': True, 'result': dispatch(request)}
+            if (DEVELOPMENT_DIAGNOSTICS or RECORD_DIAGNOSTICS) and request.get('action') not in ('status', 'logs', 'runtimeLogs', 'developmentLogs', 'linuxStatus'):
+                response['diagnostics'] = runtime_logs()
+            print(json.dumps(response))
         except (ValueError, RuntimeError) as exception:
-            print(json.dumps({'ok': False, 'error': str(exception)}))
+            response = {'ok': False, 'error': str(exception)}
+            if DEVELOPMENT_DIAGNOSTICS or RECORD_DIAGNOSTICS:
+                response['diagnostics'] = runtime_logs()
+            print(json.dumps(response))
         except Exception:
             print(json.dumps({'ok': False, 'error': 'Runtime operation failed. No credentials were logged. Inspect installation state and the recovery guide.'}))
 

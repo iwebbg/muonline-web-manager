@@ -14,6 +14,7 @@ let runtimeInstalled = true;
 let runtimePhase = 'ready';
 let runtimeAccess = {mode:'local',host:'localhost',url:'http://localhost',email:''};
 let runtimeServiceState='running';
+let runtimeWrites='disabled';
 let identities = [
   {id:1,name:'Owner',email:'owner@example.test',role:'administrator',is_active:true},
   {id:2,name:'Game Master',email:'gm@example.test',role:'game_master',is_active:true},
@@ -45,6 +46,11 @@ async function smoke() {
     if (action === 'setLanguage') {
       language = input.language;
     }
+    if (action === 'uninstallRuntime') { assert.equal(input.distributionConfirmation, 'MuOnline-Dev'); assert.equal(input.confirmed, true); runtimeInstalled=false; }
+    if (action === 'setGameWrites') {
+      assert.equal(input.gameWrites.confirmed, true);
+      runtimeWrites = input.gameWrites.enabled ? 'enabled' : 'disabled';
+    }
     if (action === 'stop') runtimeServiceState='exited';
     if (['start','restart'].includes(action)) runtimeServiceState='running';
     if (action === 'update') {
@@ -59,6 +65,11 @@ async function smoke() {
       return {ok:true,result:{administrator:{...row}}};
     }
     const results = {
+      uninstallRuntime: { removed: true, distribution: 'MuOnline-Dev' },
+      logs: { logsOpened: true },
+      openLogs: { logsOpened: true },
+      setGameWrites: { gameWrites: runtimeWrites, restarted: true },
+      setupStatus: { schema: 1, distribution: 'MuOnline-Dev', linuxUser: 'muonline', stage: 'ready', status: 'complete', completed: [], configuration: {} },
       adminList: adminError ? {code:adminError} : {administrators:identities},
       setLanguage: { language },
       openWebsite: { opened: true },
@@ -69,9 +80,9 @@ async function smoke() {
       sqlApply: { applied: true, changed: true, reason: 'serviceRestarted' },
       sqlCopyReport: { copied: true },
       sqlCopyPlan: { copied: true },
-      settings: { cdn: 'https://cdn.interweb.bg', webChannel: 'muonline-web/releases/v1.3.0', managerChannel: 'muonline-web/manager/stable', trustedKeys: [], language },
+      settings: { distribution: 'MuOnline-Dev', setup: { schema: 1, distribution: 'MuOnline-Dev', linuxUser: 'muonline', stage: 'ready', status: 'complete', completed: [], configuration: {} }, cdn: 'https://cdn.interweb.bg', webChannel: 'muonline-web/releases/v1.3.0', managerChannel: 'muonline-web/manager/stable', trustedKeys: [], language },
       updates: { web: pending ? { latestVersion: '1.5.0', newTag: true, installedVersion, installationKnown: true, error: 'Release is not ready.', ready: false, available: false } : { version: '1.4.0', latestVersion: '1.4.0', installedVersion, installationKnown: true, ready: true, available: installedVersion !== '1.4.0', profiles: ['registry_profile'] }, manager: { error: 'Not published' } },
-      status: { installed: runtimeInstalled, phase: runtimePhase, version: installedVersion, access: runtimeAccess, services:JSON.stringify([{Service:'app',State:runtimeServiceState}]) }
+      status: { gameWrites: runtimeWrites, installed: runtimeInstalled, phase: runtimePhase, version: installedVersion, access: runtimeAccess, services:JSON.stringify([{Service:'app',State:runtimeServiceState}]) }
     };
     return { ok: true, result: results[action] ?? 'Completed test operation' };
   });
@@ -79,6 +90,7 @@ async function smoke() {
   window = new BrowserWindow({ show: true, width: 1280, height: 1000, webPreferences: { preload: path.resolve('src/main/preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   await window.loadFile(path.resolve('src/renderer/index.html'));
   await waitUntilReady();
+  assert.doesNotMatch(await window.webContents.executeJavaScript('document.querySelector("#setupNotice").textContent'), /wsl -d/);
   assert.equal(window.getTitle(), 'MuOnline Web Manager - Powered by InterWeb Ltd.');
   assert.equal(await window.webContents.executeJavaScript('typeof require'), 'undefined');
   await fs.mkdir('artifacts/review', { recursive: true });
@@ -107,6 +119,9 @@ async function smoke() {
         assert.equal(await window.webContents.executeJavaScript(`Boolean(document.querySelector('.lifecycle-note').closest('.panel'))`), true, 'Availability note belongs inside the service card');
       }
       if (page === 'install') {
+        assert.equal(await window.webContents.executeJavaScript(`document.querySelector('.install-helpers').open`), false);
+        assert.equal(await window.webContents.executeJavaScript(`Boolean(document.querySelector('#installForm').compareDocumentPosition(document.querySelector('.install-helpers')) & Node.DOCUMENT_POSITION_FOLLOWING)`), true);
+        assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').disabled`), true);
         assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="trustCertificate"]').checked`), true, 'Initial setup defaults to trusting the SQL server certificate');
       }
       if (page === 'updates') {
@@ -262,8 +277,27 @@ async function smoke() {
     await window.webContents.executeJavaScript(`document.querySelector('[data-action="${action}"]').click()`);
     await idle();
     assert.equal(operations.filter(op=>op.action==='status').length,beforeStatus+1);
-    assert.ok(await window.webContents.executeJavaScript(`document.querySelector('#statusDetail').textContent.includes('${action==='stop'?'stopped':'running'}')`));
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[data-service="app"]').dataset.tone`), action === 'stop' ? 'failed' : 'running');
   }
+  const writesBefore = operations.filter(op => op.action === 'setGameWrites').length;
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelectorAll('.service-tile').length`), 5);
+  await window.webContents.executeJavaScript(`const toggle=document.querySelector('#gameWritesToggle'); toggle.checked=true; toggle.dispatchEvent(new Event('change'));`);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#gameWritesApply').disabled`), true);
+  assert.equal(operations.filter(op => op.action === 'setGameWrites').length, writesBefore);
+  await window.webContents.executeJavaScript(`const confirmation=document.querySelector('#gameWritesConfirm'); confirmation.checked=true; confirmation.dispatchEvent(new Event('change')); document.querySelector('#gameWritesApply').click();`);
+  await idle();
+  assert.equal(operations.filter(op => op.action === 'setGameWrites').length, writesBefore + 1);
+  assert.equal(runtimeWrites, 'enabled');
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#gameWritesToggle').checked`), true);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#gameWritesConfirm').checked`), false);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-page="install"]').click(); document.querySelector('.uninstall-panel').open=true; document.querySelector('#uninstallName').value='Personal-Linux'; document.querySelector('#uninstallConfirm').checked=true; document.querySelector('#uninstallForm').dispatchEvent(new Event('input'));`);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').disabled`), true);
+  await window.webContents.executeJavaScript(`document.querySelector('#uninstallName').value='MuOnline-Dev'; document.querySelector('#uninstallForm').dispatchEvent(new Event('input'));`);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').disabled`), false);
+  await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').click();`);
+  await idle();
+  assert.equal(operations.filter(op => op.action === 'uninstallRuntime').length, 1);
+  assert.equal(runtimeInstalled, false);
   console.log('PASS: all eight pages in EN/BG, support/company links, branding and compact navigation, SQL diagnostic evidence and explicit change confirmation, persistent language, preserved unsent fields, permanent donate footer, sandbox bridge, administrator form, password cleanup and check-only updates. Screenshots: artifacts/review/.');
 }
 app.whenReady().then(smoke).then(() => { clearTimeout(timer); app.exit(0); }).catch(error => { clearTimeout(timer); console.error(error); app.exit(1); });

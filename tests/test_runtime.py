@@ -40,6 +40,77 @@ class RuntimeTests(unittest.TestCase):
             item.stop()
         self.temporary.cleanup()
 
+    def test_storage_parents_belong_to_runtime_identity_without_changing_code_owner(self):
+        (worker.APP / 'public').mkdir()
+        (worker.APP / 'public/storage').mkdir()  # Ownership test does not require Windows symlink privileges.
+        (worker.APP / 'bootstrap').mkdir()
+        upload = worker.APP / 'storage/app/public/existing.txt'
+        upload.parent.mkdir(parents=True)
+        upload.write_text('keep existing upload')
+        with patch.object(worker, 'run'), patch.object(worker.os, 'chown', create=True) as chown:
+            worker.initialize_storage()
+        owned = {call.args[0] for call in chown.call_args_list}
+        for relative in ('storage', 'storage/app', 'storage/framework', 'storage/framework/cache'):
+            self.assertIn(worker.APP / relative, owned)
+        self.assertNotIn(worker.APP, owned)
+        self.assertNotIn(worker.APP / 'bootstrap', owned)
+        self.assertEqual(upload.read_text(), 'keep existing upload')
+
+    def test_resume_repairs_storage_before_entering_bootstrap(self):
+        order = []
+        with patch.object(worker, 'initialize_storage', side_effect=lambda: order.append('storage')), patch.object(worker, 'finish_install', side_effect=lambda *args: order.append('bootstrap')):
+            worker.dispatch({'action': 'resumeInstall', 'settings': {}})
+        self.assertEqual(order, ['storage', 'bootstrap'])
+
+    def test_game_write_change_preserves_environment_and_recreates_project(self):
+        original = b'APP_KEY=keep-key\nCUSTOM="first\nlast"\nGAME_DB_READONLY="true"\nGAME_WRITES_ENABLED="false"\n'
+        (worker.APP / '.env').write_bytes(original)
+        with patch.object(worker, 'compose', return_value='') as compose, patch.object(worker.os, 'chown', create=True):
+            result = worker.apply_game_writes(self.state, {'enabled': True, 'confirmed': True, 'expectedMode': 'disabled'})
+        self.assertEqual(result, {'gameWrites': 'enabled', 'restarted': True})
+        self.assertEqual(worker.game_write_mode(), 'enabled')
+        self.assertEqual(worker.load_state()['environment']['GAME_DB_READONLY'], 'false')
+        content = (worker.APP / '.env').read_text()
+        self.assertIn('APP_KEY=keep-key\n', content)
+        self.assertIn('CUSTOM="first\nlast"\n', content)
+        self.assertIn(('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300'), [call.args for call in compose.call_args_list])
+        self.assertTrue(any('--entrypoint' in call.args and 'config:clear' in call.args for call in compose.call_args_list))
+        self.assertFalse(any('migrate' in call.args or 'restart' in call.args for call in compose.call_args_list))
+
+    def test_game_write_change_requires_confirmation_and_fresh_status(self):
+        (worker.APP / '.env').write_text('GAME_DB_READONLY=true\nGAME_WRITES_ENABLED=false\n')
+        with patch.object(worker, 'compose') as compose:
+            for settings in [{'enabled': True, 'confirmed': False}, {'enabled': 'true', 'confirmed': True}, {'enabled': True, 'confirmed': True, 'expectedMode': 'enabled'}]:
+                with self.assertRaises(ValueError):
+                    worker.apply_game_writes(self.state, settings)
+            result = worker.apply_game_writes(self.state, {'enabled': False, 'confirmed': True, 'expectedMode': 'disabled'})
+        compose.assert_not_called()
+        self.assertFalse(result['restarted'])
+
+    def test_game_write_failure_restores_exact_files_and_blocks_start_if_recovery_fails(self):
+        for recovery_fails in (False, True):
+            original = b'APP_KEY=keep\r\nGAME_DB_READONLY="true"\r\nGAME_WRITES_ENABLED="false"\r\n'
+            (worker.APP / '.env').write_bytes(original)
+            worker.save_state(self.state)
+            state_bytes = worker.STATE.read_bytes()
+            attempts = []
+            def restart(*args, **kwargs):
+                if args[0] == 'up':
+                    attempts.append(1)
+                    if recovery_fails or len(attempts) == 1:
+                        raise RuntimeError('restart failure')
+                return ''
+            with patch.object(worker, 'compose', side_effect=restart), patch.object(worker.os, 'chown', create=True):
+                with self.assertRaisesRegex(RuntimeError, 'recovery failed' if recovery_fails else 'previous configuration restored'):
+                    worker.apply_game_writes(self.state, {'enabled': True, 'confirmed': True, 'expectedMode': 'disabled'})
+            self.assertEqual((worker.APP / '.env').read_bytes(), original)
+            if recovery_fails:
+                self.assertEqual(worker.load_state()['phase'], 'game-writes-recovery-required')
+                with self.assertRaisesRegex(ValueError, 'manual recovery'):
+                    worker.dispatch({'action': 'start'})
+            else:
+                self.assertEqual(worker.STATE.read_bytes(), state_bytes)
+
     def test_password_policy_has_32_bytes_and_suffix(self):
         values = {worker.password() for _ in range(100)}
         self.assertEqual(len(values), 100)
@@ -79,8 +150,13 @@ class RuntimeTests(unittest.TestCase):
         for name in ['../escape', '/etc/passwd', '.env', 'storage/app/public/upload', 'vendor/autoload.php', 'a\\b', 'C:/escape']:
             archive = self.root / 'bad.zip'
             with zipfile.ZipFile(archive, 'w') as bundle:
-                bundle.writestr(name, 'evil')
-            with self.assertRaises(ValueError):
+                # ZipInfo normalizes backslashes on Windows; preserve the deliberately unsafe fixture.
+                entry = zipfile.ZipInfo()
+                entry.filename = name
+                entry.orig_filename = name
+                bundle.writestr(entry, 'evil')
+            # ZIP reading also normalizes separators on Windows; the worker runs on Linux.
+            with self.assertRaises(ValueError), patch.object(zipfile.os, 'sep', '/'):
                 worker.safe_extract(archive, self.root / 'extracted', 'application')
         with zipfile.ZipFile(self.root / 'link.zip', 'w') as bundle:
             entry = zipfile.ZipInfo('link')
@@ -170,7 +246,8 @@ class RuntimeTests(unittest.TestCase):
 
     def test_access_change_preserves_custom_multiline_values_and_actual_app_key(self):
         original = '# keep comments\nAPP_KEY=rotated-key\nCUSTOM="first\nAPP_URL=literal content\nlast"\nAPP_URL=http://localhost\n'
-        (worker.APP / '.env').write_text(original)
+        # Match Linux runtime bytes without Windows text-mode newline translation.
+        (worker.APP / '.env').write_bytes(original.encode())
         with patch.object(worker.os, 'chown', create=True):
             self.state['access'] = worker.access_settings({'mode': 'ip', 'host': '192.0.2.10', 'httpAcknowledged': True})
             worker.write_configuration(self.state)
@@ -354,6 +431,15 @@ class RuntimeTests(unittest.TestCase):
         for secret in ('runtime-secret', 'unknown-token', 'another-secret'):
             self.assertNotIn(secret, result)
 
+    def test_archive_error_identifies_protected_root_without_contents_or_private_paths(self):
+        archive = self.root / 'protected.zip'
+        with zipfile.ZipFile(archive, 'w') as bundle:
+            bundle.writestr('storage/private-database-backup.sql', 'SECRET-CONTENTS')
+        with self.assertRaisesRegex(ValueError, r'Archive contains protected runtime data \(application: storage\)\.') as error:
+            worker.safe_extract(archive, self.root / 'extracted', 'application')
+        self.assertNotIn('private-database-backup', str(error.exception))
+        self.assertNotIn('SECRET-CONTENTS', str(error.exception))
+
     def test_production_package_separates_vendor_and_excludes_secrets(self):
         runtime = self.root / 'runtime'
         for relative, contents in {'artisan': '<?php', 'vendor/autoload.php': '<?php', 'vendor/composer/installed.json': '{"dev":false,"packages":[]}', 'public/build/manifest.json': '{}', 'docker/php/Dockerfile': 'FROM php', 'config/game.php': "return ['version_profiles' => ['from_real_registry' => Foo::class]];", '.env': 'SECRET', 'storage/app/public/upload': 'user-data', 'node_modules/evil/index.js': 'no', '.aws/credentials': 'SECRET', 'resources/views/themes/custom/index.blade.php': 'theme'}.items():
@@ -361,13 +447,18 @@ class RuntimeTests(unittest.TestCase):
             file.parent.mkdir(parents=True, exist_ok=True)
             file.write_text(contents)
         output = self.root / 'release'
+        (runtime / '.git').write_text('gitdir: private-worktree-metadata')
         manifest = packager.package(runtime, output, '1.3.0', 'https://cdn.interweb.bg')
         self.assertEqual(manifest['profiles'], ['from_real_registry'])
         self.assertEqual(manifest['artifacts']['application']['url'], 'https://cdn.interweb.bg/muonline-web/releases/v1.3.0/application.zip')
         with zipfile.ZipFile(output / 'application.zip') as bundle:
+            self.assertNotIn('.git', bundle.namelist())
             self.assertNotIn('.env', bundle.namelist())
             self.assertNotIn('vendor/autoload.php', bundle.namelist())
             self.assertFalse(any(name.startswith(('node_modules/', 'storage/', '.aws/')) for name in bundle.namelist()))
+        # Both actual packager outputs must satisfy the runtime extraction policy.
+        worker.safe_extract(output / 'application.zip', self.root / 'release-check', 'application')
+        worker.safe_extract(output / 'vendor.zip', self.root / 'release-check', 'vendor')
         with zipfile.ZipFile(output / 'vendor.zip') as bundle:
             self.assertIn('vendor/autoload.php', bundle.namelist())
             self.assertTrue(all(name.startswith('vendor/') for name in bundle.namelist()))

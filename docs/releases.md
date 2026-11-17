@@ -69,6 +69,14 @@ protected runtime files and special files. There is no support yet for revocatio
 expiry metadata; signed older manifests are rejected for installed web/manager updates
 by semantic version ordering. An initial install can select any trusted signed release.
 
+Protected-runtime rejections report the archive kind and fixed root category
+(.env, .git, node_modules or storage), never file contents. This happens before SQL
+bootstrap; changing databases cannot resolve it. Rebuild and re-sign a clean release
+with the authorized operator workflow, and publish only when explicitly requested.
+Packager/runtime contract tests extract both generated archives with the worker's
+actual validation policy. Excluded root names apply to files as well as directories
+(for example a Git worktree's .git file).
+
 ## Publish only when explicitly requested
 
 No tool or CI workflow here uploads objects. Once authorized separately, upload these
@@ -112,6 +120,13 @@ or trust keys. Only a CDN base override remains under an advanced disclosure.
 
 Cache manifests/signatures briefly and immutable artifact URLs for longer; account
 for CDN consistency during publishing.
+
+Run `npm run verify:cdn` from the source repository to verify the latest stable
+manifest signature and download/check both ZIP sizes and SHA256 hashes without
+starting WSL, executing archives, changing SQL or uploading anything. On Windows
+it uses the dev panel's public feed preferences when present and build/trust.json.
+Temporary downloads are removed afterward. This checks delivery/integrity, not
+archive contents or runtime installation.
 
 ## Manager build and updates
 

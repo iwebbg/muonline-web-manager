@@ -24,8 +24,9 @@ npm start
 ```
 
 On Linux, unset ELECTRON_RUN_AS_NODE if inherited from the terminal. A graphical
-session is required. `npm run test:ui` can run under Xvfb instead. On Windows use the
-CI-built installer once the branch is pushed/reviewed by an operator.
+session is required. `npm run test:ui` can run under Xvfb instead. On Windows,
+[the source dev workflow](development-wsl.md) runs a real disposable WSL runtime
+without NSIS. Installer acceptance still requires the Windows CI-built installer.
 
 ## Verified locally
 

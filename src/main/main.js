@@ -2,8 +2,15 @@ import { app, BrowserWindow, ipcMain, shell, session, dialog, Menu, clipboard } 
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { Backend } from './backend.js';
+import { acquireDevLock } from './dev-lock.js';
+import { runtimeProfile } from './runtime-profile.js';
 import { externalLinks } from '../shared/links.js';
 import { resolveLocale, translate } from '../shared/i18n.js';
+
+const profile = runtimeProfile(app.isPackaged, process.argv.includes('--dev-wsl'));
+if (profile.development) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'MuOnline-Web-Manager-Dev'));
+}
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const renderer = path.resolve(directory, '../renderer/index.html');
@@ -54,6 +61,10 @@ function createWindow() {
       dialog.showMessageBox(window, { type: 'info', message: t('closeBusy'), buttons: [t('ok')] });
     }
   });
+  if (profile.development) {
+    window.on('page-title-updated', event => event.preventDefault());
+    window.setTitle('MuOnline DEV — MuOnline-Dev WSL — real runtime operations');
+  }
   window.loadFile(renderer);
 }
 
@@ -67,9 +78,13 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
   app.whenReady().then(async () => {
+    if (profile.development) {
+      const releaseDevLock = acquireDevLock(app.getPath('appData'));
+      app.once('will-quit', releaseDevLock);
+    }
     const resources = app.isPackaged ? process.resourcesPath : path.resolve(directory, '../..');
     language = resolveLocale(app.getLocale());
-    backend = new Backend(resources, app.getPath('userData'), app.isPackaged ? path.join(resources, 'trust.json') : path.join(resources, 'build/trust.json'), language);
+    backend = new Backend(resources, app.getPath('userData'), app.isPackaged ? path.join(resources, 'trust.json') : path.join(resources, 'build/trust.json'), language, profile);
     await backend.initialize();
     language = backend.language;
     updateMenu();
@@ -79,6 +94,11 @@ if (!app.requestSingleInstanceLock()) {
       try {
         validateSender(event, input);
         const result = await backend.invoke(action, input);
+        if (action === 'logs' || action === 'openLogs') {
+          const error = await shell.openPath(result.logsDirectory);
+          if (error) throw new Error('Could not open the support log folder.');
+          return { ok: true, result: { logsOpened: true } };
+        }
         if (action === 'openWebsite' || action === 'openAdmin') {
           await shell.openExternal(result);
           return { ok: true, result: { opened: true } };
@@ -99,9 +119,17 @@ if (!app.requestSingleInstanceLock()) {
         if (action === 'updateManager') {
           setTimeout(() => app.quit(), 200);
         }
-        return { ok: true, result };
+        return { ok: true, result, logUnavailable: backend.logUnavailable === true };
       } catch (error) {
-        return { ok: false, error: error.message };
+        if (!error.logFile && !error.logUnavailable && backend) {
+          try {
+            const log = await backend.supportLogs.begin(typeof action === 'string' ? action : 'operation', input);
+            await log.append('ERROR: ' + error.message);
+            if (log.failed) error.logUnavailable = true;
+            else error.logFile = log.file;
+          } catch { error.logUnavailable = true; }
+        }
+        return { ok: false, error: error.message.split('\n')[0].slice(0, 350), logFile: error.logFile, logUnavailable: error.logUnavailable === true };
       }
     });
     ipcMain.handle('manager:link', async (event, target) => {
@@ -112,8 +140,14 @@ if (!app.requestSingleInstanceLock()) {
       await shell.openExternal(target);
     });
     createWindow();
-  }).catch(() => {
-    dialog.showErrorBox(t('startupTitle'), t('startupError'));
+  }).catch(async error => {
+    let logFile = '';
+    try {
+      const log = await backend.supportLogs.begin('startup');
+      await log.append('ERROR: ' + error.message);
+      if (!log.failed) logFile = log.file;
+    } catch { /* The startup dialog still explains that startup failed. */ }
+    dialog.showErrorBox(t('startupTitle'), (profile.development ? error.message.split('\n')[0] : t('startupError')) + (logFile ? '\n\n' + logFile : ''));
     app.quit();
   });
   app.on('window-all-closed', () => app.quit());

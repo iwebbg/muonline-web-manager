@@ -2,6 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Backend } from '../src/main/backend.js';
 
+test('game write changes require explicit confirmation and cannot replace their runtime operation', async () => {
+  const backend = new Backend('/unused', '/unused');
+  let request;
+  backend.ensureKeepalive = async () => {};
+  backend.runtime = async value => { request = value; };
+  await assert.rejects(backend.invoke('setGameWrites', { gameWrites: { enabled: true, confirmed: false, expectedMode: 'disabled' } }), /Confirm/);
+  assert.equal(request, undefined);
+  await backend.invoke('setGameWrites', { action: 'install', gameWrites: { enabled: true, confirmed: true, expectedMode: 'disabled', command: 'unsafe' } });
+  assert.deepEqual(request, { action: 'setGameWrites', gameWrites: { enabled: true, confirmed: true, expectedMode: 'disabled' } });
+});
+
 test('IPC cannot dispatch arbitrary runtime operations', async () => {
   const backend = new Backend('/unused', '/unused');
   await assert.rejects(backend.invoke('exec', { command: 'rm' }), /Unsupported/);

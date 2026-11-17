@@ -1,12 +1,14 @@
 import { spawn } from 'node:child_process';
 
 /** Execute a bounded command with argument arrays and no command-line secrets. */
-export function execute(file, args, input = '', timeout = 1800000) {
+export function execute(file, args, input = '', timeout = 1800000, diagnostics = null) {
   return new Promise((resolve, reject) => {
     const child = spawn(file, args, { shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     let output = '';
+    let errorOutput = '';
     let exceeded = false;
-    const timer = setTimeout(() => child.kill(), timeout);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeout);
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', chunk => {
       output += chunk;
@@ -16,16 +18,25 @@ export function execute(file, args, input = '', timeout = 1800000) {
       }
     });
     // Runtime stderr can include secrets from dependencies. Never forward it to the renderer.
-    child.stderr.resume();
+    if (diagnostics?.onDiagnostics) {
+      child.stderr.setEncoding('utf8');
+      child.stderr.on('data', chunk => { errorOutput = (errorOutput + chunk).slice(-1024 * 1024); });
+    } else child.stderr.resume();
     child.stdin.on('error', () => {});
     child.on('error', () => {
       clearTimeout(timer);
       reject(new Error('Cannot start required executable: ' + file));
     });
-    child.on('close', code => {
+    child.on('close', async code => {
       clearTimeout(timer);
+      if (diagnostics?.onDiagnostics) {
+        try { await diagnostics.onDiagnostics({ executable: file, code, stdout: output, stderr: errorOutput }); } catch { /* Logging never changes the command result. */ }
+      }
       if (code !== 0 || exceeded) {
-        reject(new Error('Command failed or timed out: ' + file + '. Output withheld to protect credentials.'));
+        const knownWslErrors = ['Wsl/E_ACCESSDENIED', 'Wsl/WSL_E_DISTRO_NOT_FOUND', 'Wsl/Service/WSL_E_DISTRO_NOT_FOUND', 'Wsl/Service/CreateInstance/WSL_E_DISTRO_NOT_FOUND'];
+        const diagnostic = file === 'wsl.exe' ? knownWslErrors.find(value => output.replaceAll('\u0000', '').includes(value)) : undefined;
+        const reason = timedOut ? 'timeout' : exceeded ? 'output limit exceeded' : 'exit ' + code;
+        reject(new Error('Command failed: ' + file + ' (' + reason + ')' + (diagnostic ? ' [' + diagnostic + ']' : '') + '. Output withheld to protect credentials.'));
       } else {
         resolve(output.replaceAll('\u0000', ''));
       }

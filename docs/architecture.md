@@ -5,6 +5,13 @@ checks/sets up WSL2, Ubuntu-24.04, Docker Engine, and the application. The insta
 and the Linux runtime have independent lifecycles. NSIS uninstall does not destroy
 SQL databases, WSL site data, certificates, backups or the keepalive task.
 
+Source-only `npm run dev` selects the fixed MuOnline-Dev distribution and
+MuOnline-Web-Dev-WSL task, with separate Electron preferences. Worker invocation,
+release path conversion and SQL diagnostics all receive the same main-owned
+profile. No renderer field or saved preference selects a distribution. The normal
+launch retains Ubuntu-24.04. See [development WSL](development-wsl.md) for setup,
+confirmed reset and shared Windows/SQL resource boundaries.
+
 ## Trust and process boundaries
 
 `src/main/main.js` creates one sandboxed, isolated renderer. Node integration is off;
@@ -25,8 +32,27 @@ configuration. The buttons remain disabled until a successful installed-state ch
 The preload exposes named operations, not a shell, filesystem API or raw ipcRenderer.
 Main invokes `wsl.exe` with fixed argv and sends a packaged Python worker plus JSON
 on stdin. Python dispatches a fixed operation list and invokes subprocess argv arrays.
-No user SQL host, domain, password or profile becomes shell code. The only setup shell
-script is a packaged fixed script for Ubuntu 24.04 and Docker's official APT repository.
+No user SQL host, domain, password or profile becomes shell code. Two fixed packaged
+shell scripts prepare Python on Ubuntu 24.04 and install Docker's official APT
+repository/packages. Linux account/systemd preparation belongs to worker.py.
+
+Install and Resume now share a desktop setup coordinator: WSL distribution, Linux
+account/systemd, Docker, keepalive, then application installation/resume. The desktop
+`installation.json` records the current stage before effects, its completion/failure,
+the Linux username and a bounded public form draft. It never contains temporary SQL
+or administrator credentials, command output or exception text. Completed effects
+are re-measured before retry: a healthy Docker Engine is reused. The worker's private
+application phases remain authoritative for bootstrap/admin/SSL recovery.
+
+Ubuntu is accessed using explicit `-u root --exec` rather than opening an interactive
+shell/user wizard. The worker creates a fixed `muonline` account with useradd's locked
+password default, preserving an existing account/password. No Linux password is
+generated or stored. Manual access uses the saved distro/username and Windows
+identity: `wsl -d <distribution> -u muonline --exec /bin/bash`. If systemd needs enabling,
+the original wsl.conf is retained privately and only the selected distribution is
+terminated/restarted. Windows UAC/reboot remains an explicit OS boundary; secrets
+must be supplied again after the panel restarts. `setupStatus` is a read-only IPC
+endpoint that remains available during an install for public progress display.
 
 The worker runs as root in the user's WSL distro. This is a privileged local deployment
 manager, not a sandbox against the Windows account owner or WSL root. Runtime state
@@ -35,6 +61,16 @@ IPC status responses. Temporary SQL bootstrap secrets live in a private /dev/shm
 only around a one-shot bootstrap container and are removed in `finally`. Backup SQL
 credentials cross only stdin to PHP and are never archived. Subprocess stderr and
 failed-command output are withheld because dependencies may echo connection strings.
+Runtime subprocess diagnostics are recorded with known request/runtime passwords,
+bootstrap authorization, APP_KEY and common credential fields/URI authentication
+redacted. Neither argv nor stdin is recorded. Main forces the recording policy;
+renderer fields cannot switch it off or select a log path. Bounded root-private
+WSL JSONL logs are relayed to Windows-local per-operation support files under
+Electron userData/logs in both normal and dev modes. Windows process stdout/stderr
+is captured only through this redacting logger. Thirty files up to 2 MiB each are
+retained; inputs and secrets remain in memory only. User-facing errors stay short
+and identify a support filename; Logs opens the local folder. The dev CLI can still
+read WSL diagnostics. Local files survive removal of the runtime distribution.
 The log endpoint redacts known runtime secrets and common credential fields, but logs
 still contain operational/user information and should not be shared publicly.
 
@@ -54,13 +90,17 @@ Node.js. PHP processes run as www-data; nginx sees a read-only application mount
 `app`, `queue`, `scheduler`, `nginx` and Redis use `restart: unless-stopped`.
 
 Docker is enabled under WSL systemd. The current user's Windows scheduled task
-`MuOnline-Web-WSL` runs `wsl.exe ... sleep infinity` at logon and is started immediately
+`MuOnline-Web-WSL` runs `wsl.exe ... sleep infinity` through a hidden waiting
+PowerShell host (both wrapper and child use Hidden), and is started at logon/immediately
 after Docker setup, before deployment, and on explicit Start. This also covers an
 already-installed Docker Engine. This is needed because WSL systemd services alone do not guarantee
 that WSL stays alive. The scheduled task runs only in that user's logon context. It
 is not a promise of unattended pre-login hosting. Windows shutdown/sleep, manually
 terminating the task, or `wsl --shutdown` interrupts the runtime. Task restart and
 Docker restart behavior must be checked on Windows.
+Task registration replaces a running legacy direct-wsl action by stopping that task
+first; otherwise IgnoreNew would retain its visible console. The child remains
+attached to the waiting task rather than being detached from Task Scheduler.
 
 ## Laravel integration
 
@@ -82,6 +122,21 @@ remain closed. Administrator listing/update/deactivation/password reset use the 
 `admin:delete --force`; the UI favors deactivation. See [administrator management](administrators.md)
 for private stdin, response filtering and the required web release. SQL backup does not call the
 SQLite-only `app:backup` command.
+
+The overview exposes a confirmed game-write switch. `setGameWrites` accepts only a
+boolean target, explicit restart confirmation and the last measured mode. The worker
+reads the actual dotenv flags, rejects stale requests and requires phase=ready. It
+backs up exact .env/state bytes, updates only GAME_DB_READONLY/GAME_WRITES_ENABLED,
+clears Laravel config using a one-shot PHP command that bypasses bootstrap, and
+recreates the entire Compose project with health waiting. A plain Docker restart
+does not reload env_file. This changes no SQL permissions and runs no migrations.
+Intentional write enablement does not bypass game:doctor's read-only safety policy.
+
+Service cards normalize only known Compose fields, distinguish running/health states
+and expand for details. The overview refreshes measurements every 15 seconds while
+visible and idle. Background reads cannot apply changes, replace a newer operation's
+result or silently reset an unsubmitted write selection. Mutations show busy state;
+write changes are never applied just by moving the switch.
 
 ## Access modes
 

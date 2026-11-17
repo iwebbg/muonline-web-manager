@@ -5,7 +5,7 @@ umask 077
 . /etc/os-release
 [ "$ID" = ubuntu ]
 [ "$VERSION_ID" = 24.04 ]
-[ "$(cat /proc/1/comm)" = systemd ] || { echo 'Enable systemd in /etc/wsl.conf, terminate Ubuntu-24.04, then retry.' >&2; exit 1; }
+[ "$(cat /proc/1/comm)" = systemd ] || { echo 'Enable systemd in /etc/wsl.conf, terminate the selected WSL distribution, then retry.' >&2; exit 1; }
 apt-get update
 apt-get install -y ca-certificates curl python3
 install -m 0755 -d /etc/apt/keyrings

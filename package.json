@@ -8,9 +8,9 @@
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "npm run test:node && python3 -m unittest discover -s tests -p 'test_*.py'",
+    "test": "npm run test:node && npm run test:python",
     "test:node": "node --test --test-isolation=none tests/*.test.js",
-    "test:python": "python -m unittest discover -s tests -p test_*.py",
+    "test:python": "node scripts/run-python-tests.js",
     "dist:win": "electron-builder --win nsis --x64 --publish never",
     "release:web": "python3 scripts/package-release.py",
     "test:ui": "node scripts/run-electron-smoke.js",
@@ -19,7 +19,12 @@
     "test:sql": "python3 scripts/test-sql-backup.py",
     "test:sql-troubleshooting": "python3 scripts/test-sql-troubleshooting.py",
     "validate:trust": "node scripts/validate-trust.js",
-    "test:release": "python3 scripts/test-runtime-release.py"
+    "verify:cdn": "node scripts/verify-cdn.js",
+    "test:release": "python3 scripts/test-runtime-release.py",
+    "dev": "node scripts/run-dev.js",
+    "dev:logs": "node scripts/dev-logs.js",
+    "dev:wsl:setup": "node scripts/dev-wsl.js setup",
+    "dev:wsl:reset": "node scripts/dev-wsl.js reset"
   },
   "devDependencies": {
     "electron": "45.3.3",

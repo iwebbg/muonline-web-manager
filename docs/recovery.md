@@ -3,6 +3,11 @@
 The runtime data directory is private and contains credentials. Backups are private
 as well. Use WSL root to inspect it; do not paste .env/state.json into issue reports.
 Never use `docker compose config` output in public logs: it can contain resolved secrets.
+Docker failures report the fixed operation (build/start/bootstrap/etc.), a classified
+reason and, when available, a Dockerfile line number. Raw stdout/stderr, arguments,
+temporary bootstrap paths and SQL identities remain withheld. These categories are
+diagnostic hints, not proof of the underlying cause. Retry Resume after correcting
+the reported cause; do not reset WSL or drop databases to investigate a build error.
 
 The fixed project command inside Ubuntu-24.04 is:
 
@@ -15,6 +20,27 @@ site data and SQL databases. Closing the panel does not stop Docker. The user lo
 keepalive task does not make Windows an always-on server before login or during sleep.
 
 ## Interrupted initial installation
+
+The desktop `installation.json` in Electron userData records environment/application
+setup progress independently of private WSL state.json. Click Install or Resume to
+re-measure completed environment steps, retry the failed step and then resume any
+bootstrap-pending/runtime-bootstrapped/administrator-created application phase.
+Ready installations are not installed again. Recovery-required migration/access
+phases are never bypassed. Public form fields and the Linux username survive panel
+restart; temporary SQL/bootstrap administrator passwords do not and must be re-entered.
+There is no automatic resume on application startup or automatic reboot.
+Resume repairs ownership of the manager-created Laravel storage directories before
+starting the non-root bootstrap container. Earlier installs left storage parent
+directories root-owned, causing the entrypoint's chmod to fail before any SQL work.
+The mutable storage tree belongs to uid/gid 33; application code and bootstrap's
+parent directory do not become writable by the runtime. Existing uploads are kept.
+
+The manager-created muonline Linux account has a locked password, with Windows WSL
+identity providing access. Use `wsl -d <distribution> -u muonline --exec /bin/bash`
+for a normal shell, or explicit `-u root --exec /bin/bash` for recovery. Existing Linux
+passwords are not reset. If systemd preparation changed wsl.conf, the original is at
+`/opt/muonline-web/wsl.conf.before-manager`; custom options are retained in the active
+file. The manager may terminate only its selected distro to activate systemd.
 
 Status reports `bootstrap-pending`, `runtime-bootstrapped` or `administrator-created`
 until installation succeeds. The first-install form's **Продължи прекъсната инсталация**
@@ -38,6 +64,21 @@ containers running with administrator credentials.
 If application/ exists but state.json does not (e.g. interruption before first state
 write), inspect and recover the staged runtime manually rather than deleting/replacing
 it through another first install. Do not repeat provisioning against unrelated databases.
+
+## Game write setting changes
+
+The overview's Apply and restart action saves .env/state.json under a private
+`backups/game-writes-*` directory before changing the two write flags. It recreates
+the project and waits for health; existing uploads, APP_KEY and unrelated dotenv
+settings are preserved. Ordinary failures restore exact previous files and restart
+the previous configuration. Failure of that restart records
+`game-writes-recovery-required` with the backup path; automatic Start/update/write
+changes are blocked until manual configuration recovery. A hard interruption during
+`game-writes-changing` also requires inspection. Restore matching .env/state files,
+clear Laravel config and recreate the project only after checking that backup.
+
+Configuration restoration does not undo game database writes that may have occurred
+while the enabled application was running. There is no automatic SQL rollback.
 
 ## Failed access changes
 
@@ -118,3 +159,35 @@ removing runtime data. The Windows task can be disabled/removed in Task Schedule
 (`MuOnline-Web-WSL`); certificate renewal uses `muonline-certificates.timer` in WSL.
 SQL databases/logins, Docker volumes and Ubuntu are never deleted by panel uninstall.
 No cleanup command here authorizes deleting a user's game data.
+
+The source-only [dev reset](development-wsl.md) requires exact-name terminal
+confirmation and removes only MuOnline-Dev and its dedicated Windows task. It
+cannot undo changes to external SQL databases. Close the dev panel first; a shared
+lock prevents reset/setup while that panel is running.
+
+## Runtime uninstall from the panel
+
+First installation contains a separate destructive runtime removal section. The user
+must acknowledge permanent deletion and type the exact main-owned distribution name.
+Main records an uninstall checkpoint, inventories that exact identity, attempts to
+copy redacted WSL diagnostics into Windows-local support logs, stops/removes only its
+root-folder keepalive task, then invokes `wsl --unregister` for that fixed identity.
+A failed inventory/task cleanup never proceeds to unregister. Retry is safe when a
+previous attempt already removed the distro; the journal is cleared only on success.
+
+Unregister permanently removes all data in the distribution, including Docker
+volumes, website uploads, certificates, backups and any other local workloads there.
+This cannot be rolled back. It does not remove shared Windows WSL features, other
+distributions, the panel, local support logs or external SQL databases/logins. NSIS
+uninstall remains independent and never invokes this operation automatically.
+
+## Windows support logs
+
+Use Logs / Open log folder to locate the named file shown after an error. The files
+are in Electron userData/logs (`%APPDATA%\MuOnline-Web-Manager-Dev\logs` for dev).
+They include operation timestamps, exit codes and redacted process diagnostics,
+without request bodies, argv or stdin. Request/runtime passwords and common credential
+fields are removed before writing. Logs may still contain technical/user information;
+review them before sharing. They remain available after WSL removal. Recent files
+are bounded/rotated (30 files, 2 MiB per file); export the relevant file before older
+ones expire. The manager does not send support logs automatically.

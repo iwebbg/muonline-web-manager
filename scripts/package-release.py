@@ -42,6 +42,8 @@ def archive_tree(source, destination, vendor):
             for name in sorted(filenames):
                 file = Path(root) / name
                 relative = file.relative_to(source)
+                if relative.parts[0] in excluded:
+                    continue
                 if vendor != (relative.parts[0] == 'vendor') or file.is_symlink():
                     continue
                 if name == '.env' or name.startswith('.env.') or name.endswith(('.pem', '.pfx', '.key')) or relative.as_posix() in ('public/hot', 'script.sql'):

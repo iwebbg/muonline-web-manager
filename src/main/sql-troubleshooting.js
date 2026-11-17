@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import net from 'node:net';
 import { execute } from './process.js';
+import { productionProfile, developmentProfile } from './runtime-profile.js';
 import { buildSqlReport, firewallScope, redactDiagnostic, validateSqlInput } from '../shared/sql-diagnostics.js';
 
 const PYTHON_BOOT = "import sys,json,io; p=json.load(sys.stdin); sys.stdin=io.StringIO(json.dumps({'request':p['request'],'probe':p['probe']})); exec(compile(p['script'],'sql-troubleshooting','exec'),{'__name__':'__main__'})";
@@ -42,7 +43,9 @@ function changeFingerprint(instance, scope) {
 /** Own read-only diagnostics and separately previewed, expiring Windows mutation plans. */
 export class SqlTroubleshooter {
   /** Allow process runners to be substituted by isolated contract tests. */
-  constructor(resources, userData, runner = execute, tcpProbe = windowsTcpProbe) {
+  constructor(resources, userData, runner = execute, tcpProbe = windowsTcpProbe, profile = productionProfile) {
+    if (profile !== productionProfile && profile !== developmentProfile) throw new Error('Invalid runtime profile.');
+    this.profile = profile;
     this.resources = resources;
     this.userData = userData;
     this.runner = runner;
@@ -65,7 +68,7 @@ export class SqlTroubleshooter {
   async wsl(input, addresses = [], networkOnly = false) {
     const script = await readFile(path.join(this.resources, 'runtime/sql-troubleshooting.py'), 'utf8');
     const probe = networkOnly ? '' : await readFile(path.join(this.resources, 'runtime/sql-probe.php'), 'utf8');
-    const raw = await this.runner('wsl.exe', ['-d', 'Ubuntu-24.04', '-u', 'root', '--exec', 'python3', '-c', PYTHON_BOOT], JSON.stringify({ script, probe, request: { ...input, windowsAddresses: addresses.slice(0, 8), networkOnly } }), 180000);
+    const raw = await this.runner('wsl.exe', ['-d', this.profile.distribution, '-u', 'root', '--exec', 'python3', '-c', PYTHON_BOOT], JSON.stringify({ script, probe, request: { ...input, windowsAddresses: addresses.slice(0, 8), networkOnly } }), 180000);
     const response = JSON.parse(raw.trim());
     if (!response.ok) {
       throw new Error('SQL troubleshooting could not inspect WSL. No credentials were logged.');

@@ -1,0 +1,120 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { Backend } from '../src/main/backend.js';
+import { developmentProfile, productionProfile } from '../src/main/runtime-profile.js';
+import { SetupJournal } from '../src/main/setup-journal.js';
+
+test('one Install resumes after restart without reinstalling healthy WSL/Docker or persisting credentials', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-setup-test-'));
+  let distro = false, docker = false, installed = false;
+  const calls = [];
+  const runner = async (file, args, input) => {
+    calls.push({ file, args, input });
+    if (file === 'powershell.exe') return '';
+    if (args.includes('--quiet')) return distro ? 'MuOnline-Dev' : '';
+    if (args.includes('--verbose')) return distro ? 'MuOnline-Dev Running 2' : '';
+    if (args.includes('--install')) { distro = true; return ''; }
+    if (args.includes('--version')) return 'WSL test';
+    if (args.includes('sh')) {
+      assert.doesNotMatch(input, /\r/);
+      if (input.includes('docker-ce')) docker = true;
+      return '';
+    }
+    const { request } = JSON.parse(input);
+    if (request.action === 'prepareWsl') return JSON.stringify({ ok: true, result: { linuxUser: 'muonline', restartRequired: false } });
+    if (request.action === 'prerequisites') {
+      if (!docker) throw new Error('Docker unavailable');
+      return JSON.stringify({ ok: true, result: { docker: 'test' } });
+    }
+    if (request.action === 'status') return JSON.stringify({ ok: true, result: installed ? { installed: true, phase: 'ready' } : { installed: false } });
+    throw new Error('Unexpected operation ' + request.action);
+  };
+  const create = () => {
+    const backend = new Backend(process.cwd(), directory, undefined, 'en', developmentProfile, runner);
+    backend.requireWindows = () => {};
+    return backend;
+  };
+  try {
+    const backend = create();
+    backend.deploy = async () => { throw new Error('private failure sql-password'); };
+    await assert.rejects(backend.invoke('install', { settings: { sqlHost: '192.0.2.8', sqlAdmin: 'bootstrap-login', sqlPassword: 'sql-password', administrator: { password: 'admin-password' }, access: { mode: 'local' } } }), /private failure/);
+    const saved = JSON.parse(await readFile(path.join(directory, 'installation.json'), 'utf8'));
+    assert.equal(saved.stage, 'application');
+    assert.equal(saved.status, 'failed');
+    assert.equal(saved.linuxUser, 'muonline');
+    assert.equal(saved.configuration.sqlHost, '192.0.2.8');
+    assert.doesNotMatch(JSON.stringify(saved), /sql-password|admin-password|bootstrap-login|private failure/);
+    const resumed = create();
+    resumed.deploy = async (action, input) => {
+      assert.equal(action, 'install');
+      assert.equal(input.settings.sqlHost, '192.0.2.8');
+      assert.equal(input.settings.sqlPassword, 'new-secret');
+      installed = true;
+      return 'Complete';
+    };
+    await resumed.invoke('resumeInstall', { settings: { sqlPassword: 'new-secret' } });
+    resumed.busy = true;
+    const progress = await resumed.invoke('setupStatus', { sqlPassword: 'ignored', stage: 'evil' });
+    assert.equal(progress.stage, 'ready');
+    assert.equal(progress.status, 'complete');
+    assert.equal(calls.filter(call => call.args.includes('--install')).length, 1);
+    assert.equal(calls.filter(call => call.input?.includes('apt-get install -y docker-ce')).length, 1);
+    for (const call of calls.filter(call => call.args.includes('-d') && !call.args.includes('--install'))) assert.equal(call.args[call.args.indexOf('-d') + 1], 'MuOnline-Dev');
+    assert.doesNotMatch(await readFile(path.join(directory, 'installation.json'), 'utf8'), /new-secret/);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('application resume uses its existing WSL phase and never reinstalls or bypasses recovery', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-resume-test-'));
+  try {
+    for (const phase of ['bootstrap-pending', 'runtime-bootstrapped', 'administrator-created', 'ready', 'migration-recovery-required']) {
+      const backend = new Backend(process.cwd(), directory);
+      backend.requireWindows = () => {};
+      backend.ensureEnvironment = async () => {};
+      backend.deploy = async () => { throw new Error('must not reinstall'); };
+      let current = phase;
+      const actions = [];
+      backend.runtime = async request => {
+        actions.push(request.action);
+        if (request.action === 'status') return { installed: true, phase: current };
+        assert.equal(request.action, 'resumeInstall');
+        current = 'ready';
+        return 'Resumed';
+      };
+      if (phase === 'migration-recovery-required') {
+        await assert.rejects(backend.install(), /manual recovery/);
+        assert.deepEqual(actions, ['status']);
+      } else {
+        await backend.install();
+        assert.equal(actions.includes('resumeInstall'), phase !== 'ready');
+      }
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('Windows reboot and Linux restart boundaries are journaled without shutting down other distros', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-reboot-test-'));
+  try {
+    const backend = new Backend(process.cwd(), directory, undefined, 'en', productionProfile, async file => {
+      if (file === 'wsl.exe') throw new Error('WSL features unavailable');
+      return JSON.stringify({ restartRequired: true });
+    });
+    backend.requireWindows = () => {};
+    await assert.rejects(backend.ensureDistribution(), /Restart Windows/);
+    assert.equal((await backend.setup.read()).status, 'restartRequired');
+    const calls = [];
+    backend.runner = async (file, args) => { calls.push(args); return ''; };
+    backend.runtime = async request => request.action === 'prepareWsl' ? { linuxUser: 'muonline', restartRequired: true } : { systemd: true };
+    await backend.prepareLinux();
+    assert.ok(calls.some(args => JSON.stringify(args) === JSON.stringify(['--terminate', 'Ubuntu-24.04'])));
+    assert.ok(calls.every(args => !args.includes('--shutdown')));
+    const journal = new SetupJournal(directory, 'Ubuntu-24.04');
+    assert.equal((await journal.read()).linuxUser, 'muonline');
+    await journal.resetRuntime();
+    assert.equal((await journal.read()).stage, undefined);
+    assert.equal((await journal.read()).linuxUser, undefined);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
