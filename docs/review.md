@@ -243,3 +243,17 @@ before correction. installer-languages.nsh supplies all five missing messages be
 Bulgarian fallback expansion. All six -WX compiler contracts pass with the correction.
 No global warning suppression or NSIS cache patch is used. The final Windows build/run
 still requires the operator's Windows environment.
+
+## Support-page MUI dependency order — 2026-11-17
+
+A subsequent full Windows installer build exposed MUI_HEADER_TEXT being referenced
+while the custom include was loaded before MUI2. The earlier harness incorrectly
+preloaded MUI2 and missed the error. The revised include-order test reproduced the
+exact failure. Callback definitions now live inside customPageAfterChangeDir and
+are emitted only when the support page is inserted after MUI2 initialization.
+
+Verification now includes six page/language ordering contracts plus both complete
+electron-builder NSIS templates, using the real generated header, stdin mode and
+template working directory with -WX. All eight compile checks and 78 ordinary tests
+passed. Complete-template tests embed disposable fixture payloads and never execute
+their outputs; they are not distributable installers or a Windows runtime test.

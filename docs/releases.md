@@ -161,7 +161,8 @@ warning local to `installer-bg.nsh`; do not disable warningsAsErrors for the bui
 
 `npm run test:installer` uses the installed builder's real message generator and NSIS
 compiler. It compiles installer/uninstaller page contracts in all three possible
-custom-include positions with `-WX`, without running generated executables. Windows CI
+custom-include positions with `-WX`, and compiles both full builder templates over
+stdin with fixture payloads, without running generated executables. Windows CI
 runs it before the full installer build. The contract check is available on Linux as
 well and requires the builder's cached/downloadable NSIS compiler.
 
@@ -172,3 +173,9 @@ This file intentionally owns the project's EN/BG addLangs macro; update it along
 installerLanguages if adding another language. The regression compiler check enables
 MULTIUSER_INSTALLMODEPAGE so both the standard messages and custom overrides are tested.
 Clearing the NSIS cache does not supply these missing translations.
+
+Support-page callback functions are emitted inside customPageAfterChangeDir, after
+electron-builder has loaded MUI2. Do not move functions using MUI_HEADER_TEXT to the
+top-level custom include: that include is evaluated before MUI2 during the full
+installer build. The compiler test follows this order and covers complete installer
+and uninstaller templates, in addition to isolated page/language contracts.

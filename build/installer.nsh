@@ -23,41 +23,39 @@ LangString MuSupportDescription 1026 "MuOnline Web се развива с под
 
 !include nsDialogs.nsh
 
+; Define callbacks only when the builder inserts this page, after MUI2 is loaded.
 !macro customPageAfterChangeDir
   Page custom MuOnlineSupportPage
+  Function MuOnlineSupportPage
+    !insertmacro MUI_HEADER_TEXT "$(MuSupportTitle)" "$(MuSupportSubtitle)"
+    nsDialogs::Create 1018
+    Pop $0
+    ${NSD_CreateLabel} 0 0 100% 30u "$(MuSupportDescription)"
+    Pop $0
+    ${NSD_CreateLink} 0 42u 100% 14u "https://buymeacoffee.com/interweb.bg"
+    Pop $0
+    ${NSD_OnClick} $0 MuOnlineCoffee
+    ${NSD_CreateLink} 0 66u 100% 14u "https://ko-fi.com/interwebltd"
+    Pop $0
+    ${NSD_OnClick} $0 MuOnlineKofi
+    ${NSD_CreateLink} 0 90u 100% 14u "https://paypal.me/interwebltd"
+    Pop $0
+    ${NSD_OnClick} $0 MuOnlinePaypal
+    nsDialogs::Show
+  FunctionEnd
+
+  Function MuOnlineCoffee
+    Pop $0
+    ExecShell "open" "https://buymeacoffee.com/interweb.bg"
+  FunctionEnd
+
+  Function MuOnlineKofi
+    Pop $0
+    ExecShell "open" "https://ko-fi.com/interwebltd"
+  FunctionEnd
+
+  Function MuOnlinePaypal
+    Pop $0
+    ExecShell "open" "https://paypal.me/interwebltd"
+  FunctionEnd
 !macroend
-
-!ifndef BUILD_UNINSTALLER
-Function MuOnlineSupportPage
-  !insertmacro MUI_HEADER_TEXT "$(MuSupportTitle)" "$(MuSupportSubtitle)"
-  nsDialogs::Create 1018
-  Pop $0
-  ${NSD_CreateLabel} 0 0 100% 30u "$(MuSupportDescription)"
-  Pop $0
-  ${NSD_CreateLink} 0 42u 100% 14u "https://buymeacoffee.com/interweb.bg"
-  Pop $0
-  ${NSD_OnClick} $0 MuOnlineCoffee
-  ${NSD_CreateLink} 0 66u 100% 14u "https://ko-fi.com/interwebltd"
-  Pop $0
-  ${NSD_OnClick} $0 MuOnlineKofi
-  ${NSD_CreateLink} 0 90u 100% 14u "https://paypal.me/interwebltd"
-  Pop $0
-  ${NSD_OnClick} $0 MuOnlinePaypal
-  nsDialogs::Show
-FunctionEnd
-
-Function MuOnlineCoffee
-  Pop $0
-  ExecShell "open" "https://buymeacoffee.com/interweb.bg"
-FunctionEnd
-
-Function MuOnlineKofi
-  Pop $0
-  ExecShell "open" "https://ko-fi.com/interwebltd"
-FunctionEnd
-
-Function MuOnlinePaypal
-  Pop $0
-  ExecShell "open" "https://paypal.me/interwebltd"
-FunctionEnd
-!endif
