@@ -164,3 +164,11 @@ compiler. It compiles installer/uninstaller page contracts in all three possible
 custom-include positions with `-WX`, without running generated executables. Windows CI
 runs it before the full installer build. The contract check is available on Linux as
 well and requires the builder's cached/downloadable NSIS compiler.
+
+The pinned NSIS 3.0.4.1 Bulgarian language file also lacks the five standard
+MULTIUSER_* messages. `build/installer-languages.nsh` supplies them immediately before
+Bulgarian's MUI_LANGUAGE expansion, preventing a fatal English-fallback warning.
+This file intentionally owns the project's EN/BG addLangs macro; update it alongside
+installerLanguages if adding another language. The regression compiler check enables
+MULTIUSER_INSTALLMODEPAGE so both the standard messages and custom overrides are tested.
+Clearing the NSIS cache does not supply these missing translations.

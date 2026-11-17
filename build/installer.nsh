@@ -1,4 +1,5 @@
 !addincludedir "${__FILEDIR__}"
+!include "installer-languages.nsh"
 ; electron-builder generates message includes asynchronously. Apply overrides only
 ; after all generated includes have loaded, when installer.nsi invokes this hook.
 !macro customHeader

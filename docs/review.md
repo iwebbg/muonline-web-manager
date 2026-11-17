@@ -232,3 +232,14 @@ The corrected custom pages compiled for installer/uninstaller in three include o
 (six checks with -WX), and all 78 ordinary tests passed. The new test:installer command
 is in Windows CI. This fixes the reported compiler failure; the full corrected Windows
 installer must still be built and executed on Windows.
+
+## Standard Bulgarian MultiUser translations — 2026-11-17
+
+The next Windows log reached standard MUI language expansion and exposed five missing
+Bulgarian MultiUser translations in the pinned NSIS 3.0.4.1 language file. The original
+custom-page harness did not enable this standard page's language flag. It now enables
+that flag and uses the builder's actual addLangs macro, reproducing the reported failure
+before correction. installer-languages.nsh supplies all five missing messages before
+Bulgarian fallback expansion. All six -WX compiler contracts pass with the correction.
+No global warning suppression or NSIS cache patch is used. The final Windows build/run
+still requires the operator's Windows environment.
