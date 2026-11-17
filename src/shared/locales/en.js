@@ -1,5 +1,9 @@
 /** Application-owned interface strings. Runtime identifiers and logs remain unchanged. */
 export default {
+  "profile.darksteam_97d99i": "97d+99i (Tested and Works with DarksTeam 97d+99i)",
+  "profile.darksteam_1_0m": "Season 1 (1.0M) (Tested and Works with DarksTeam 0.99.60/62T, Beta 15)",
+  "profile.muemu_season_6": "Season 6 (Tested and Works with Louis Emulator Update 32)",
+  "profile.mudevs_season_21": "Season 21 (MuDevs)",
   "uninstall.reason.confirmation_required": "Confirm SQL deletion.",
   "uninstall.reason.invalid_input": "Check the temporary SQL credentials and confirmation.",
   "uninstall.reason.target_mismatch": "The SQL target changed. Reconcile configuration and check status again.",
@@ -135,7 +139,7 @@ export default {
   "sqlHost": "SQL host/IP (reachable from WSL)",
   "sqlPort": "SQL TCP port",
   "sqlAdmin": "Temporary SQL administrator",
-  "profile": "Game adapter/profile from the release registry",
+  "profile": "MuServer Version",
   "appEnv": "Laravel APP_ENV (independent of access mode)",
   "gameDatabase": "Existing game database",
   "webDatabase": "Separate web database",

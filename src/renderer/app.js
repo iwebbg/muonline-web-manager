@@ -242,7 +242,9 @@ function populate(fillSettings = false) {
     for (const profile of feeds.web?.profiles ?? []) {
       const option = document.createElement('option');
       option.value = profile;
-      option.textContent = profile;
+      const labelKey = 'profile.' + profile;
+      const label = t(labelKey);
+      option.textContent = label === labelKey ? profile : label;
       select.append(option);
     }
     if ([...select.options].some(option => option.value === selected)) {

@@ -1,5 +1,9 @@
 /** Application-owned interface strings. Runtime identifiers and logs remain unchanged. */
 export default {
+  "profile.darksteam_97d99i": "97d+99i (Тестван и работи с DarksTeam 97d+99i)",
+  "profile.darksteam_1_0m": "Season 1 (1.0M) (Тестван и работи с DarksTeam 0.99.60/62T, Beta 15)",
+  "profile.muemu_season_6": "Season 6 (Тестван и работи с Louis Emulator Update 32)",
+  "profile.mudevs_season_21": "Season 21 (MuDevs)",
   "uninstall.reason.confirmation_required": "Потвърди SQL изтриването.",
   "uninstall.reason.invalid_input": "Провери временните SQL credentials и потвърждението.",
   "uninstall.reason.target_mismatch": "SQL target-ът е променен. Съгласувай конфигурацията и провери статуса отново.",
@@ -135,7 +139,7 @@ export default {
   "sqlHost": "SQL host/IP (достъпен от WSL)",
   "sqlPort": "SQL TCP порт",
   "sqlAdmin": "Временен SQL administrator",
-  "profile": "Game adapter/profile от release registry",
+  "profile": "MuServer Version",
   "appEnv": "Laravel APP_ENV (отделно от достъпа)",
   "gameDatabase": "Съществуваща game база",
   "webDatabase": "Отделна web база",

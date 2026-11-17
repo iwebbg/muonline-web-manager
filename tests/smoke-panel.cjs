@@ -82,7 +82,7 @@ async function smoke() {
       sqlCopyReport: { copied: true },
       sqlCopyPlan: { copied: true },
       settings: { distribution: 'MuOnline-Dev', setup: { schema: 1, distribution: 'MuOnline-Dev', linuxUser: 'muonline', stage: 'ready', status: 'complete', completed: [], configuration: {} }, cdn: 'https://cdn.interweb.bg', webChannel: 'muonline-web/releases/v1.3.0', managerChannel: 'muonline-web/manager/stable', trustedKeys: [], language },
-      updates: { web: pending ? { latestVersion: '1.5.0', newTag: true, installedVersion, installationKnown: true, error: 'Release is not ready.', ready: false, available: false } : { version: '1.4.0', latestVersion: '1.4.0', installedVersion, installationKnown: true, ready: true, available: installedVersion !== '1.4.0', profiles: ['registry_profile'] }, manager: { error: 'Not published' } },
+      updates: { web: pending ? { latestVersion: '1.5.0', newTag: true, installedVersion, installationKnown: true, error: 'Release is not ready.', ready: false, available: false } : { version: '1.4.0', latestVersion: '1.4.0', installedVersion, installationKnown: true, ready: true, available: installedVersion !== '1.4.0', profiles: ['registry_profile', 'darksteam_97d99i', 'darksteam_1_0m', 'muemu_season_6', 'mudevs_season_21'] }, manager: { error: 'Not published' } },
       status: { uninstallTarget: { host: 'sql.example', port: 1433, database: 'MuOnline_Web', login: 'web_app' }, gameWrites: runtimeWrites, installed: runtimeInstalled, phase: runtimePhase, version: installedVersion, access: runtimeAccess, services:JSON.stringify([{Service:'app',State:runtimeServiceState}]) }
     };
     return { ok: true, result: results[action] ?? 'Completed test operation' };
@@ -120,6 +120,17 @@ async function smoke() {
         assert.equal(await window.webContents.executeJavaScript(`Boolean(document.querySelector('.lifecycle-note').closest('.panel'))`), true, 'Availability note belongs inside the service card');
       }
       if (page === 'install') {
+        const profiles = await window.webContents.executeJavaScript(`Array.from(document.querySelector('#profiles').options, option => ({ value: option.value, label: option.textContent }))`);
+        assert.deepEqual(profiles.map(option => option.value), ['registry_profile', 'darksteam_97d99i', 'darksteam_1_0m', 'muemu_season_6', 'mudevs_season_21']);
+        assert.equal(profiles[0].label, 'registry_profile', 'Future registry entries remain available without invented compatibility claims');
+        assert.equal(profiles[1].label, locale === 'en' ? '97d+99i (Tested and Works with DarksTeam 97d+99i)' : '97d+99i (Тестван и работи с DarksTeam 97d+99i)');
+        assert.match(profiles[2].label, /^Season 1 \(1\.0M\)/);
+        assert.match(profiles[3].label, /^Season 6 .*Louis Emulator Update 32/);
+        assert.equal(profiles[4].label, 'Season 21 (MuDevs)');
+        assert.match(await window.webContents.executeJavaScript(`document.querySelector('#profiles').parentElement.textContent`), /^MuServer Version/);
+        await window.webContents.executeJavaScript(`document.querySelector('#profiles').value='darksteam_1_0m'`);
+        assert.equal(await window.webContents.executeJavaScript(`new FormData(document.querySelector('#installForm')).get('profile')`), 'darksteam_1_0m');
+
         assert.equal(await window.webContents.executeJavaScript(`document.querySelector('.install-helpers').open`), false);
         assert.equal(await window.webContents.executeJavaScript(`Boolean(document.querySelector('#installForm').compareDocumentPosition(document.querySelector('.install-helpers')) & Node.DOCUMENT_POSITION_FOLLOWING)`), true);
         assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').disabled`), true);
@@ -178,7 +189,7 @@ async function smoke() {
   await selectLanguage('en');
   const values = await window.webContents.executeJavaScript(`({ host: document.querySelector('[name="sqlHost"]').value, password: document.querySelector('[name="sqlPassword"]').value, checked: document.querySelector('[name="httpAcknowledged"]').checked })`);
   assert.deepEqual(values, { host: '192.0.2.8', password: 'Unsent-test-secret', checked: true });
-  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#profiles').options.length`), 1);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#profiles').options.length`), 5);
   const reloaded = new Promise(resolve => window.webContents.once('did-finish-load', resolve));
   window.webContents.reload();
   await reloaded;
