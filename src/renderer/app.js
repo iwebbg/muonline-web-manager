@@ -1,3 +1,4 @@
+import { OperationProgress } from './progress.js';
 import { servicesPanel, populateServices, bindServices } from './services.js';
 import { resolveLocale, translate } from '../shared/i18n.js';
 import { translateMessage } from '../shared/messages.js';
@@ -7,6 +8,7 @@ import { administratorsPage, populateAdministrators, receiveAdministrators, admi
 
 const content = document.querySelector('#content');
 const output = document.querySelector('#output');
+const progress = new OperationProgress();
 let page = 'overview';
 let busy = false;
 let settings = {};
@@ -63,6 +65,7 @@ async function refreshSetupStatus() {
   const response = await window.manager?.invoke('setupStatus');
   if (response?.ok && response.result?.schema === 1) {
     settings.setup = response.result;
+    progress.setup(response.result);
     renderSetupProgress();
   }
 }
@@ -320,6 +323,9 @@ async function perform(action, input = {}, quiet = false) {
     return;
   }
   let operationResult;
+  let operationFailed = false;
+  if (!quiet) document.querySelector('.console').classList.remove('operation-error');
+  const progressToken = progress.begin(action, actionLabel(action), t, quiet);
   busy = true;
   statusEpoch++;
   document.querySelector('#activity').textContent = t('running');
@@ -344,6 +350,7 @@ async function perform(action, input = {}, quiet = false) {
     }
     const result = response.result;
     operationResult = result;
+    if (['adminList', 'adminUpdate', 'adminDelete'].includes(action) && result?.code) operationFailed = true;
     if (['adminList', 'adminUpdate', 'adminDelete'].includes(action)) {
       receiveAdministrators(action, result);
     }
@@ -396,6 +403,7 @@ async function perform(action, input = {}, quiet = false) {
       if (response.logUnavailable) output.textContent += '\n' + t('logs.unavailable');
     }
   } catch (error) {
+    operationFailed = true;
     if (['adminList', 'adminUpdate', 'adminDelete'].includes(action)) {
       administratorState.error = { code: 'commandUnavailable' };
       if (action === 'adminList') {
@@ -431,15 +439,22 @@ async function perform(action, input = {}, quiet = false) {
     populate();
     if (uninstallButton) uninstallButton.disabled = true;
   }
-  if (['install', 'resumeInstall', 'update', 'saveSettings'].includes(action) && lastOutput.kind === 'result') {
-    await perform('status', {}, true);
-    await perform('updates', {}, true);
-  }
-  if ((['access', 'start', 'stop', 'restart'].includes(action) && lastOutput.kind === 'result') || action === 'setGameWrites') {
-    await perform('status', {}, true);
-  }
-  if (action === 'admin' && lastOutput.kind === 'result') {
-    await perform('adminList', {}, true);
+  try {
+    if (['install', 'resumeInstall', 'update', 'saveSettings'].includes(action) && lastOutput.kind === 'result') {
+      progress.verifying(progressToken);
+      await perform('status', {}, true);
+      await perform('updates', {}, true);
+    }
+    if ((['access', 'start', 'stop', 'restart'].includes(action) && lastOutput.kind === 'result') || action === 'setGameWrites') {
+      progress.verifying(progressToken);
+      await perform('status', {}, true);
+    }
+    if (action === 'admin' && lastOutput.kind === 'result') {
+      progress.verifying(progressToken);
+      await perform('adminList', {}, true);
+    }
+  } finally {
+    progress.finish(progressToken, operationFailed && !quiet);
   }
   return operationResult;
 }

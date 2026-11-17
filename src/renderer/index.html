@@ -28,9 +28,18 @@
     <p id="devNotice" class="warning" hidden></p>
     <p id="setupNotice" class="hint" aria-live="polite" hidden></p>
     <div id="content"></div>
-    <section class="console" data-i18n-label="operationResult" aria-label="Operation result"><div class="console-heading"><span data-i18n="operations">OPERATIONS</span> <span id="operation"></span></div><pre id="output" aria-live="polite">Welcome. Start by checking prerequisites and signed releases.</pre></section>
+    <section class="console" data-i18n-label="operationResult" aria-label="Operation result"><div class="console-heading"><span data-i18n="operations">OPERATIONS</span> <span id="operation"></span></div><pre id="output" aria-live="polite" tabindex="-1">Welcome. Start by checking prerequisites and signed releases.</pre></section>
   </main>
   <footer><strong data-i18n="donateTitle">Support MuOnline Web</strong><span data-i18n="donateHint">Your support keeps development going.</span><a href="https://buymeacoffee.com/interweb.bg">Buy Me a Coffee ↗</a><a href="https://ko-fi.com/interwebltd">Ko-fi ↗</a><a href="https://paypal.me/interwebltd">PayPal ↗</a></footer>
+  <dialog id="operationProgress" class="operation-progress" aria-labelledby="progressTitle" aria-describedby="progressHint" tabindex="-1">
+    <div class="progress-card">
+      <div class="progress-spinner" aria-hidden="true"></div>
+      <h1 id="progressTitle"></h1>
+      <p id="progressHint" class="hint"></p>
+      <div class="progress-current" role="status" aria-live="polite" aria-atomic="true"><span class="progress-dot" aria-hidden="true"></span><span id="progressStep"></span></div>
+      <p id="progressElapsed" class="hint"></p>
+    </div>
+  </dialog>
   <script type="module" src="app.js"></script>
 </body>
 </html>

@@ -20,6 +20,10 @@ let identities = [
   {id:2,name:'Game Master',email:'gm@example.test',role:'game_master',is_active:true},
   {id:3,name:'Second admin',email:'second@example.test',role:'administrator',is_active:true}
 ];
+let heldAction = null;
+let releaseHeld = null;
+let heldSetupStage = null;
+let heldError = null;
 let refuseUninstall = true;
 const timer = setTimeout(() => { console.error('Electron smoke test timed out.'); app.exit(1); }, 60000);
 
@@ -44,6 +48,17 @@ async function selectLanguage(locale) {
 async function smoke() {
   ipcMain.handle('manager:invoke', (event, action, input) => {
     operations.push({ action, input });
+    if (action === heldAction) {
+      return new Promise(resolve => {
+        releaseHeld = () => {
+          if (heldError) { resolve({ ok: false, error: heldError }); return; }
+          if (action === 'stop') runtimeServiceState = 'exited';
+          if (['start', 'restart'].includes(action)) runtimeServiceState = 'running';
+          resolve({ ok: true, result: action === 'status' ? { installed: true, phase: 'ready', version: installedVersion, access: runtimeAccess, services: '[]', gameWrites: runtimeWrites } : 'Completed test operation' });
+        };
+      });
+    }
+    if (action === 'setupStatus' && heldSetupStage) return { ok: true, result: { schema: 1, stage: heldSetupStage, status: 'running', completed: [] } };
     if (action === 'setLanguage') {
       language = input.language;
     }
@@ -291,6 +306,64 @@ async function smoke() {
     assert.equal(operations.filter(op=>op.action==='status').length,beforeStatus+1);
     assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[data-service="app"]').dataset.tone`), action === 'stop' ? 'failed' : 'running');
   }
+  for (const action of ['start', 'stop', 'restart']) {
+    heldAction = action;
+    releaseHeld = null;
+    await window.webContents.executeJavaScript(`document.querySelector('[data-action="${action}"]').click()`);
+    await window.webContents.executeJavaScript(`new Promise(resolve => { const timer=setInterval(()=>{if(document.querySelector('#operationProgress').open){clearInterval(timer);resolve();}},10); })`);
+    assert.match(await window.webContents.executeJavaScript(`document.querySelector('#progressTitle').textContent`), /Starting|Stopping|Restarting/);
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[data-action="${action}"]').disabled`), true);
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#operationProgress').getBoundingClientRect().bottom <= document.querySelector('footer').getBoundingClientRect().top + 1`), true, 'Donation footer remains visible below the overlay');
+    window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+    window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#operationProgress').open`), true, 'Escape must not imply cancellation of a runtime operation');
+    if (action === 'start') {
+      await window.webContents.executeJavaScript(`new Promise(resolve => { const timer=setInterval(()=>{if(!document.querySelector('#progressElapsed').textContent.endsWith('0:00')){clearInterval(timer);resolve();}},10); })`);
+      const finishStart = releaseHeld;
+      heldAction = 'status';
+      releaseHeld = null;
+      finishStart();
+      await new Promise(resolve => { const timer=setInterval(()=>{if(releaseHeld){clearInterval(timer);resolve();}},10); });
+      assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#operationProgress').open`), true);
+      assert.match(await window.webContents.executeJavaScript(`document.querySelector('#progressStep').textContent`), /Refreshing website status/);
+    }
+    heldAction = null;
+    releaseHeld();
+    await idle();
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#operationProgress').open`), false);
+    assert.equal(await window.webContents.executeJavaScript(`document.body.classList.contains('operation-loading')`), false);
+  }
+  for (const locale of ['en', 'bg']) {
+    await selectLanguage(locale);
+    await window.webContents.executeJavaScript(`document.querySelector('[data-page="install"]').click(); document.querySelector('.install-helpers').open=true;`);
+    heldAction = 'installDocker';
+    heldSetupStage = 'distribution';
+    await window.webContents.executeJavaScript(`document.querySelector('[data-action="installDocker"]').click()`);
+    const expected = locale === 'en' ? 'Preparing the website environment…' : 'Подготовка на средата за сайта…';
+    await window.webContents.executeJavaScript(`new Promise(resolve => { const timer=setInterval(()=>{if(document.querySelector('#operationProgress').open && document.querySelector('#progressStep').textContent === ${JSON.stringify(expected)}){clearInterval(timer);resolve();}},10); })`);
+    heldSetupStage = 'docker';
+    const nextStep = locale === 'en' ? 'Installing the services needed by your website…' : 'Инсталиране на услугите, необходими за сайта…';
+    await window.webContents.executeJavaScript(`new Promise(resolve => { const timer=setInterval(()=>{if(document.querySelector('#progressStep').textContent === ${JSON.stringify(nextStep)}){clearInterval(timer);resolve();}},10); })`);
+    await fs.writeFile(`artifacts/review/progress-${locale}.png`, (await window.webContents.capturePage()).toPNG());
+    heldSetupStage = null;
+    heldAction = null;
+    releaseHeld();
+    await idle();
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#operationProgress').open`), false);
+  }
+  await selectLanguage('en');
+  await window.webContents.executeJavaScript(`document.querySelector('[data-page="overview"]').click()`);
+  heldAction = 'restart';
+  heldError = 'Runtime operation failed. No credentials were logged. Inspect installation state and the recovery guide.';
+  await window.webContents.executeJavaScript(`document.querySelector('[data-action="restart"]').click()`);
+  await window.webContents.executeJavaScript(`new Promise(resolve => { const timer=setInterval(()=>{if(document.querySelector('#operationProgress').open){clearInterval(timer);resolve();}},10); })`);
+  heldAction = null;
+  releaseHeld();
+  heldError = null;
+  await idle();
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#operationProgress').open`), false);
+  assert.equal(await window.webContents.executeJavaScript(`document.activeElement.id`), 'output');
+  assert.equal(await window.webContents.executeJavaScript(`document.body.classList.contains('operation-loading')`), false);
   const writesBefore = operations.filter(op => op.action === 'setGameWrites').length;
   assert.equal(await window.webContents.executeJavaScript(`document.querySelectorAll('.service-tile').length`), 5);
   await window.webContents.executeJavaScript(`const toggle=document.querySelector('#gameWritesToggle'); toggle.checked=true; toggle.dispatchEvent(new Event('change'));`);
@@ -312,6 +385,10 @@ async function smoke() {
   await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').click();`);
   await idle();
   assert.equal(runtimeInstalled, true);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#operationProgress').open`), false);
+  assert.equal(await window.webContents.executeJavaScript(`document.activeElement.id`), 'output');
+  await window.webContents.executeJavaScript(`new Promise(resolve => setTimeout(resolve, 500))`);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('.console').getBoundingClientRect().top < innerHeight - 70 && document.querySelector('.console').classList.contains('operation-error')`), true, 'Failure scrolls to the operation result');
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallSqlPassword').value`), '');
   assert.match(await window.webContents.executeJavaScript(`document.querySelector('#output').textContent`), /retained|запазен/);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').disabled`), true);
@@ -321,6 +398,6 @@ async function smoke() {
   assert.equal(operations.filter(op => op.action === 'uninstallRuntime').length, 2);
   assert.equal(runtimeInstalled, false);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallSqlPassword').value`), '');
-  console.log('PASS: all eight pages in EN/BG, support/company links, branding and compact navigation, SQL diagnostic evidence and explicit change confirmation, persistent language, preserved unsent fields, permanent donate footer, sandbox bridge, administrator form, password cleanup and check-only updates. Screenshots: artifacts/review/.');
+  console.log('PASS: all eight pages in EN/BG, support/company links, branding and compact navigation, SQL diagnostic evidence and explicit change confirmation, persistent language, preserved unsent fields, permanent donate footer, sandbox bridge, administrator form, password cleanup, delayed modal progress, live setup stages, final status refresh, error focus/scroll and check-only updates. Screenshots: artifacts/review/.');
 }
 app.whenReady().then(smoke).then(() => { clearTimeout(timer); app.exit(0); }).catch(error => { clearTimeout(timer); console.error(error); app.exit(1); });

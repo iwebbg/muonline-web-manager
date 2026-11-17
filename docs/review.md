@@ -298,3 +298,24 @@ and malformed-input refusals returned the expected JSON and exit 1. No SQL was t
 Actual SQL DROP/login removal and the complete Windows/WSL sequence still require
 acceptance testing on a disposable installation. The sibling Laravel files were not
 modified by this manager integration.
+
+
+## Visible operation progress — 2026-11-18
+
+Explicit longer panel actions now show an EN/BG modal overlay with an animated
+activity indicator, operation title and elapsed time. Setup journal polling supplies
+actual stage changes during installation/resume. No percentage or unmeasured SQL
+substage is invented. The overlay stays until follow-up status/feed refreshes finish;
+quiet background polling does not open one. Fast actions avoid flashing through a
+short delay. The permanent donation footer remains visible below the modal.
+
+Escape cannot dismiss progress and imply cancellation of the ongoing runtime action.
+The dialog handles keyboard focus and reduced-motion preferences disable animation.
+Errors dismiss the overlay, mark the operation console and scroll/focus its output.
+Backend execution, permissions and credential handling are unchanged.
+
+Electron smoke coverage delays Start/Stop/Restart and setup requests, checks elapsed
+time, real journal stage transitions in both languages, Escape handling, footer
+visibility, final status refresh and error cleanup/focus/scroll. Review screenshots
+are generated at artifacts/review/progress-en.png and progress-bg.png. Native Windows
+rendering and the actual installation timing still require Windows acceptance tests.
