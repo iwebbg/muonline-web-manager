@@ -172,3 +172,15 @@ footer remains on every page. Only explicit clicks open the browser/email compos
 no issue is posted, no email is sent and no credentials are attached automatically.
 External destinations are a fixed main-process allow-list. The smoke test covers both
 languages, those links, title/attribution and sidebar overlap at minimum window size.
+
+## Card spacing and SQL setup defaults — 2026-11-17
+
+The first-install certificate trust option starts checked and remains user-controlled;
+it does not override an existing deployment or disable encryption. Certificate-chain
+verification can still be enabled by clearing it when using a valid server certificate.
+The availability note now lives inside the services card, separated by a divider, and
+the manager/web update cards have a 20px gap. EN/BG smoke assertions cover all three.
+
+The new Laravel administrator list/update/delete classes were inspected as references;
+at the time of this change they contained empty handlers. Their integration must use
+the completed command contract rather than assuming successful listing or mutation.

@@ -73,6 +73,13 @@ async function smoke() {
       assert.equal(/[А-Яа-я]/.test(state.body), locale === 'bg', 'Page should be fully translated: ' + page);
       if (page === 'overview') {
         assert.ok(!/Linux|WSL|Docker|Electron/.test(state.body), 'Overview should use plain user-facing language');
+        assert.equal(await window.webContents.executeJavaScript(`Boolean(document.querySelector('.lifecycle-note').closest('.panel'))`), true, 'Availability note belongs inside the service card');
+      }
+      if (page === 'install') {
+        assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="trustCertificate"]').checked`), true, 'Initial setup defaults to trusting the SQL server certificate');
+      }
+      if (page === 'updates') {
+        assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#updateForm').getBoundingClientRect().top - document.querySelector('.update-panels > .panel').getBoundingClientRect().bottom >= 20`), true, 'Update cards need visible spacing');
       }
       if (page === 'support') {
         const linksBefore = openedLinks.length;
