@@ -435,5 +435,9 @@ export default {
   "admins.field.is_active": "Активно състояние",
   "admins.field.administrator": "Потребител",
   "admins.field.database": "База данни",
-  "admins.field.confirmation": "Потвърждение"
+  "admins.field.confirmation": "Потвърждение",
+  "openWebsite": "Отвори сайта",
+  "openAdmin": "Отвори админ панела",
+  "openedInBrowser": "Отворено в браузъра по подразбиране.",
+  "websiteLinksHint": "Достъпно след завършена инсталация и проверка на състоянието на сайта."
 };

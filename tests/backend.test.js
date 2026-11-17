@@ -41,3 +41,30 @@ test('deploy input cannot replace authenticated metadata, archive paths or selec
   assert.equal(received.release, authenticated);
   assert.deepEqual(received.paths, {});
 });
+
+test('website buttons resolve fresh installed origins and fixed admin path, ignoring renderer URLs', async () => {
+  const backend = new Backend('/unused', '/unused');
+  let address = 'http://localhost';
+  backend.runtime = async request => {
+    assert.deepEqual(request, { action: 'status' });
+    return { installed: true, phase: 'ready', access: { url: address } };
+  };
+  for (const origin of ['http://localhost', 'http://192.168.1.7', 'http://[::1]', 'https://mu.example.com']) {
+    address = origin;
+    assert.equal(await backend.invoke('openWebsite', { url: 'file:///tmp/unsafe', action: 'install' }), origin);
+    assert.equal(await backend.invoke('openAdmin', { path: '/elsewhere' }), origin + '/admin');
+  }
+});
+
+test('website opening rejects incomplete installations and unsafe configured URI schemes or credentials', async () => {
+  const backend = new Backend('/unused', '/unused');
+  for (const state of [{ installed: false }, { installed: true, phase: 'bootstrap-pending', access: { url: 'http://localhost' } }]) {
+    backend.runtime = async () => state;
+    await assert.rejects(backend.invoke('openWebsite'), /Complete installation/);
+  }
+  for (const address of ['file:///tmp/site', 'javascript:alert(1)', 'https://name:password@example.com', 'https://example.com/path', 'https://example.com?token=x', 'https://example.com/#fragment', 'not a url']) {
+    backend.runtime = async () => ({ installed: true, phase: 'ready', access: { url: address } });
+    await assert.rejects(backend.invoke('openAdmin'), /Installed website address is invalid/);
+    assert.equal(backend.busy, false);
+  }
+});

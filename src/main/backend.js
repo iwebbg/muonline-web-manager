@@ -101,6 +101,23 @@ export class Backend {
     }
   }
 
+  /** Resolve only the installed site's root or admin route; renderer URLs are never accepted. */
+  async websiteUrl(administration = false) {
+    const state = await this.runtime({ action: 'status' });
+    if (!state?.installed || state.phase !== 'ready') {
+      throw new Error('Complete installation and check website status first.');
+    }
+    try {
+      const url = new URL(state.access?.url);
+      if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
+        throw new Error('Invalid website address');
+      }
+      return url.origin + (administration ? '/admin' : '');
+    } catch {
+      throw new Error('Installed website address is invalid. Check access settings.');
+    }
+  }
+
   /** Detect WSL2, the fixed Ubuntu distribution and the root-controlled Docker daemon. */
   async prerequisites() {
     this.requireWindows();
@@ -240,6 +257,10 @@ export class Backend {
     this.busy = true;
     try {
       switch (action) {
+        case 'openWebsite':
+          return await this.websiteUrl();
+        case 'openAdmin':
+          return await this.websiteUrl(true);
         case 'sqlInspect':
           this.requireWindows();
           return await this.sql.inspect();

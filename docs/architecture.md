@@ -15,6 +15,13 @@ are restricted to fixed company, GitHub project/issue, support email and donatio
 destinations in `src/shared/links.js`. Opening an issue/email composer never sends
 a report automatically or attaches runtime configuration.
 
+Open Website / Open Admin Panel are separate fixed IPC actions. Main rereads installed
+status on each click, requires completed installation, validates a plain HTTP(S) origin
+without credentials/query/fragment and opens only that origin or its fixed `/admin` path
+in the default browser. Renderer-provided URLs/paths are ignored. Local mode opens
+`http://localhost` and `http://localhost/admin`; IP/domain modes follow saved access
+configuration. The buttons remain disabled until a successful installed-state check.
+
 The preload exposes named operations, not a shell, filesystem API or raw ipcRenderer.
 Main invokes `wsl.exe` with fixed argv and sends a packaged Python worker plus JSON
 on stdin. Python dispatches a fixed operation list and invokes subprocess argv arrays.

@@ -79,6 +79,10 @@ if (!app.requestSingleInstanceLock()) {
       try {
         validateSender(event, input);
         const result = await backend.invoke(action, input);
+        if (action === 'openWebsite' || action === 'openAdmin') {
+          await shell.openExternal(result);
+          return { ok: true, result: { opened: true } };
+        }
         if (action === 'sqlCopyReport') {
           const text = result.steps.map(step => '[' + t('sql.status.' + step.status) + '] ' + t('sql.reason.' + step.reason) + '\n' + t('sql.action.' + step.action) + '\n' + JSON.stringify(step.evidence)).join('\n\n');
           clipboard.writeText(JSON.stringify({ createdAt: result.createdAt, instance: result.selectedInstance, target: result.target }) + '\n\n' + text);

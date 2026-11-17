@@ -2,6 +2,8 @@ import { resolveLocale, translate } from './i18n.js';
 
 /** Known application messages only. Arbitrary logs and SQL diagnostics are not translated. */
 const bulgarian = {
+  "Complete installation and check website status first.": "Завършете инсталацията и проверете състоянието на сайта.",
+  "Installed website address is invalid. Check access settings.": "Адресът на инсталирания сайт е невалиден. Проверете настройките за достъп.",
   "Administrator not found.": "Администраторът не е намерен.",
   "The last active administrator cannot be deleted or deactivated.": "Последният активен администратор не може да бъде изтрит или деактивиран.",
   "Administrator update failed. Check database availability and identity constraints.": "Промяната е неуспешна. Проверете връзката с базата и ограниченията за потребителите.",

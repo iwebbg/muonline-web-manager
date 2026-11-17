@@ -199,3 +199,13 @@ actual Laravel command test in its disposable network-isolated SQLite container
 required for installed sites. No web release was published or sibling code edited.
 Windows/WSL execution against an installed release still needs the VM test. See
 [administrators.md](administrators.md) for the command and release boundaries.
+
+## Website and admin browser shortcuts — 2026-11-17
+
+The overview now has Open Website / Open Admin Panel (EN/BG), enabled after installation
+is ready and status is known. They use the saved Local/IP/Domain URL and Laravel's
+actual `/admin` dashboard route, which redirects guests to admin login. Main resolves
+fresh status at each click and never accepts renderer-supplied destinations. Tests
+cover origin changes, unsafe URI rejection, uninstalled/incomplete states and both UI
+buttons. Access changes refresh status. Browser launch uses Electron shell.openExternal;
+actual Windows default-browser execution remains a VM acceptance check.

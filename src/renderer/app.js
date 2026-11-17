@@ -39,7 +39,7 @@ function translateShell() {
 
 /** Present operation names without translating the underlying IPC identifiers. */
 function actionLabel(action) {
-  const names = { adminList: 'admins.refresh', adminUpdate: 'admins.save', adminDelete: 'admins.delete', sqlInspect: 'sql.inspect', sqlDiagnose: 'sql.run', sqlPlan: 'sql.preview', sqlApply: 'sql.apply', sqlCopyReport: 'sql.copyReport', sqlCopyPlan: 'sql.copyCommand', status: 'checkStatus', admin: 'createAdmin', backup: 'createBackup', update: 'updateWeb', updates: 'checkUpdates', access: 'applyAccess', settings: 'settingsTitle' };
+  const names = { openWebsite: 'openWebsite', openAdmin: 'openAdmin', adminList: 'admins.refresh', adminUpdate: 'admins.save', adminDelete: 'admins.delete', sqlInspect: 'sql.inspect', sqlDiagnose: 'sql.run', sqlPlan: 'sql.preview', sqlApply: 'sql.apply', sqlCopyReport: 'sql.copyReport', sqlCopyPlan: 'sql.copyCommand', status: 'checkStatus', admin: 'createAdmin', backup: 'createBackup', update: 'updateWeb', updates: 'checkUpdates', access: 'applyAccess', settings: 'settingsTitle' };
   return t(names[action] ?? action);
 }
 
@@ -48,12 +48,16 @@ function renderOutput() {
   if (lastOutput.kind === 'welcome') {
     output.textContent = t('welcome');
   } else if (lastOutput.kind === 'working') {
-    const shortWorking = { admin: 'createAdmin', adminList: 'admins.refresh', adminUpdate: 'admins.save', adminDelete: 'admins.delete', sqlInspect: 'sql.working', sqlDiagnose: 'sql.working', sqlPlan: 'sql.preparing', sqlApply: 'sql.applying', sqlCopyReport: 'sql.copying', sqlCopyPlan: 'sql.copying' };
+    const shortWorking = { openWebsite: 'openWebsite', openAdmin: 'openAdmin', admin: 'createAdmin', adminList: 'admins.refresh', adminUpdate: 'admins.save', adminDelete: 'admins.delete', sqlInspect: 'sql.working', sqlDiagnose: 'sql.working', sqlPlan: 'sql.preparing', sqlApply: 'sql.applying', sqlCopyReport: 'sql.copying', sqlCopyPlan: 'sql.copying' };
     output.textContent = shortWorking[lastOutput.action] ? t(shortWorking[lastOutput.action]) : t('working', { action: actionLabel(lastOutput.action) });
   } else if (lastOutput.kind === 'error') {
     output.textContent = translateMessage(language, lastOutput.message);
   } else {
     const value = lastOutput.value;
+    if (['openWebsite', 'openAdmin'].includes(lastOutput.action) && value?.opened) {
+      output.textContent = t('openedInBrowser');
+      return;
+    }
     if (['adminList', 'adminUpdate', 'adminDelete'].includes(lastOutput.action)) {
       output.textContent = t(value.code ? 'admins.error.' + value.code : lastOutput.action === 'adminList' ? 'admins.loaded' : 'admins.saved');
       return;
@@ -116,7 +120,7 @@ function render() {
   const pages = {
     sql: sqlPage(t),
     support: supportPage(t),
-    overview: `<h1>${t('overviewTitle')}</h1><p class="lead">${t('overviewLead')}</p><div class="cards"><div class="card"><small>${t('webApplicationLabel')}</small><strong id="webVersion">${t('unchecked')}</strong><p>${t('webVersionHint')}</p></div><div class="card"><small>${t('accessLabel')}</small><strong id="accessMode">${t('unchecked')}</strong><p id="siteUrl">localhost / IP / Domain + SSL</p></div><div class="card"><small>${t('managerLabel')}</small><strong id="managerVersion">0.1.0</strong><p>${t('managerDescription')}</p></div></div><div class="panel"><h2>${t('servicesTitle')}</h2><div id="statusDetail" class="status-detail">${t('noRuntimeStatus')}</div><div class="actions"><button data-action="status">${t('checkStatus')}</button><button data-action="start" class="primary">${t('start')}</button><button data-action="stop">${t('stop')}</button><button data-action="restart">${t('restart')}</button><button data-action="logs">${t('logs')}</button><button data-action="doctor">${t('doctor')}</button></div><p class="hint lifecycle-note">${t('lifecycleHint')}</p></div>`,
+    overview: `<h1>${t('overviewTitle')}</h1><p class="lead">${t('overviewLead')}</p><div class="actions website-links"><button type="button" class="primary" data-action="openWebsite" disabled>${t('openWebsite')} ↗</button><button type="button" data-action="openAdmin" disabled>${t('openAdmin')} ↗</button></div><p id="websiteLinksHint" class="hint">${t('websiteLinksHint')}</p><div class="cards"><div class="card"><small>${t('webApplicationLabel')}</small><strong id="webVersion">${t('unchecked')}</strong><p>${t('webVersionHint')}</p></div><div class="card"><small>${t('accessLabel')}</small><strong id="accessMode">${t('unchecked')}</strong><p id="siteUrl">localhost / IP / Domain + SSL</p></div><div class="card"><small>${t('managerLabel')}</small><strong id="managerVersion">0.1.0</strong><p>${t('managerDescription')}</p></div></div><div class="panel"><h2>${t('servicesTitle')}</h2><div id="statusDetail" class="status-detail">${t('noRuntimeStatus')}</div><div class="actions"><button data-action="status">${t('checkStatus')}</button><button data-action="start" class="primary">${t('start')}</button><button data-action="stop">${t('stop')}</button><button data-action="restart">${t('restart')}</button><button data-action="logs">${t('logs')}</button><button data-action="doctor">${t('doctor')}</button></div><p class="hint lifecycle-note">${t('lifecycleHint')}</p></div>`,
     install: `<h1>${t('installTitle')}</h1><p class="lead">${t('installLead')}</p><div class="actions"><button data-action="prerequisites">${t('prerequisites')}</button><button data-action="installWsl">${t('installWsl')}</button><button data-action="installDocker">${t('installDocker')}</button><button type="button" id="openSqlTroubleshooting">${t('sql.title')}</button></div><div class="warning">${t('dockerWarning')}</div><p id="installRelease" class="hint"></p><form id="installForm"><h2>${t('sqlTitle')}</h2><div class="grid"><label>${t('sqlHost')}<input name="sqlHost" required placeholder="192.168.1.10"></label><label>${t('sqlPort')}<input name="sqlPort" type="number" min="1" max="65535" value="1433" required></label><label>${t('sqlAdmin')}<input name="sqlAdmin" value="sa" required autocomplete="off"></label><label>${t('sqlPassword')}<input name="sqlPassword" type="password" required autocomplete="off"></label><label>${t('profile')}<select name="profile" id="profiles" required></select></label><label>${t('appEnv')}<select name="appEnv"><option value="local">local</option><option value="production">production</option></select></label><label>${t('gameDatabase')}<input name="gameDatabase" value="MuOnline" required></label><label>${t('webDatabase')}<input name="webDatabase" value="MuOnline_Web" required></label><label>${t('appLogin')}<input name="appLogin" value="muonline_web_app" required></label><label>${t('gameLogin')}<input name="gameLogin" value="muonline_web_user" required></label></div><label class="check"><input name="trustCertificate" type="checkbox" checked>${t('trustCertificate')}</label><p class="hint">${t('passwordHint')}</p><fieldset><legend>${t('access')}</legend>${accessFields()}</fieldset><fieldset><legend>${t('firstAdmin')}</legend>${adminFields()}</fieldset><div class="actions"><button class="primary" type="submit">${t('install')}</button><button type="button" id="resumeInstall">${t('resumeInstall')}</button></div><p class="hint">${t('resumeHint')}</p></form>`,
     access: `<h1>${t('accessTitle')}</h1><p class="lead">${t('accessLead')}</p><form id="accessForm">${accessFields()}<div class="warning">${t('accessWarning')}</div><button class="primary" type="submit">${t('applyAccess')}</button></form>`,
     admins: administratorsPage(t, adminFields()),
@@ -165,6 +169,13 @@ function populate(fillSettings = false) {
   if (page === 'install') {
     const feed = feeds.web;
     document.querySelector('#installRelease').textContent = feed?.ready ? t('installRelease', { version: feed.version }) : releaseDescription(feed, 'web');
+  }
+  if (page === 'overview') {
+    const available = status?.installed === true && status.phase === 'ready';
+    for (const action of ['openWebsite', 'openAdmin']) {
+      document.querySelector('[data-action="' + action + '"]').disabled = busy || !available;
+    }
+    document.querySelector('#websiteLinksHint').hidden = available;
   }
   if (page === 'overview' && status?.installed) {
     document.querySelector('#webVersion').textContent = status.version;
@@ -328,6 +339,9 @@ async function perform(action, input = {}, quiet = false) {
   if (['install', 'resumeInstall', 'update', 'saveSettings'].includes(action) && lastOutput.kind === 'result') {
     await perform('status', {}, true);
     await perform('updates', {}, true);
+  }
+  if (action === 'access' && lastOutput.kind === 'result') {
+    await perform('status', {}, true);
   }
   if (action === 'admin' && lastOutput.kind === 'result') {
     await perform('adminList', {}, true);

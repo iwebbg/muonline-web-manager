@@ -435,5 +435,9 @@ export default {
   "admins.field.is_active": "Active status",
   "admins.field.administrator": "Account",
   "admins.field.database": "Database",
-  "admins.field.confirmation": "Confirmation"
+  "admins.field.confirmation": "Confirmation",
+  "openWebsite": "Open Website",
+  "openAdmin": "Open Admin Panel",
+  "openedInBrowser": "Opened in your default browser.",
+  "websiteLinksHint": "Available after installation completes and the website status has been checked."
 };

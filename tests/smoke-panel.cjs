@@ -10,6 +10,8 @@ let language = 'en';
 let installedVersion = '1.3.0';
 let pending = false;
 let adminError = null;
+let runtimeInstalled = true;
+let runtimePhase = 'ready';
 let identities = [
   {id:1,name:'Owner',email:'owner@example.test',role:'administrator',is_active:true},
   {id:2,name:'Game Master',email:'gm@example.test',role:'game_master',is_active:true},
@@ -55,6 +57,8 @@ async function smoke() {
     const results = {
       adminList: adminError ? {code:adminError} : {administrators:identities},
       setLanguage: { language },
+      openWebsite: { opened: true },
+      openAdmin: { opened: true },
       sqlInspect: { selectedInstance: 'SQLEXPRESS', instances: [{ name: 'SQLEXPRESS', state: 'Running', version: '15.0.1', tcp: { listenAll: true, sections: [{ name: 'IPAll', port: '1433', dynamicPort: '' }] } }] },
       sqlDiagnose: { schema: 1, createdAt: '2026-11-17T10:00:00Z', steps: [{ id: 'docker.game.sql', status: 'failed', category: 'authentication', reason: 'loginRejected', action: 'loginRejected', evidence: { database: 'MuOnline', nativeCode: 18456 } }] },
       sqlPlan: { id: 'test-sql-plan', instance: 'SQLEXPRESS', port: 1433, command: "Restart-Service -Name 'MSSQL$SQLEXPRESS'", disconnectsSessions: true, changes: [] },
@@ -63,7 +67,7 @@ async function smoke() {
       sqlCopyPlan: { copied: true },
       settings: { cdn: 'https://cdn.interweb.bg', webChannel: 'muonline-web/releases/v1.3.0', managerChannel: 'muonline-web/manager/stable', trustedKeys: [], language },
       updates: { web: pending ? { latestVersion: '1.5.0', newTag: true, installedVersion, installationKnown: true, error: 'Release is not ready.', ready: false, available: false } : { version: '1.4.0', latestVersion: '1.4.0', installedVersion, installationKnown: true, ready: true, available: installedVersion !== '1.4.0', profiles: ['registry_profile'] }, manager: { error: 'Not published' } },
-      status: { installed: true, phase: 'ready', version: installedVersion, access: { mode: 'local', url: 'http://localhost' } }
+      status: { installed: runtimeInstalled, phase: runtimePhase, version: installedVersion, access: { mode: 'local', url: 'http://localhost' } }
     };
     return { ok: true, result: results[action] ?? 'Completed test operation' };
   });
@@ -89,6 +93,13 @@ async function smoke() {
       assert.equal(/[А-Яа-я]/.test(state.body), locale === 'bg', 'Page should be fully translated: ' + page);
       if (page === 'overview') {
         assert.ok(!/Linux|WSL|Docker|Electron/.test(state.body), 'Overview should use plain user-facing language');
+        assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[data-action="openWebsite"]').disabled`),false);
+        await window.webContents.executeJavaScript(`document.querySelector('[data-action="openWebsite"]').click()`);
+        await window.webContents.executeJavaScript(`new Promise(resolve=>{const timer=setInterval(()=>{if(!document.querySelector('#language').disabled){clearInterval(timer);resolve();}},10);})`);
+        await window.webContents.executeJavaScript(`document.querySelector('[data-action="openAdmin"]').click()`);
+        await window.webContents.executeJavaScript(`new Promise(resolve=>{const timer=setInterval(()=>{if(!document.querySelector('#language').disabled){clearInterval(timer);resolve();}},10);})`);
+        assert.ok(operations.some(op=>op.action==='openWebsite'));
+        assert.ok(operations.some(op=>op.action==='openAdmin'));
         assert.equal(await window.webContents.executeJavaScript(`Boolean(document.querySelector('.lifecycle-note').closest('.panel'))`), true, 'Availability note belongs inside the service card');
       }
       if (page === 'install') {
@@ -223,6 +234,15 @@ async function smoke() {
   window.setSize(950, 700);
   await window.webContents.executeJavaScript(`new Promise(resolve=>setTimeout(resolve,100))`);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('nav button:last-child').getBoundingClientRect().bottom <= document.querySelector('.aside-note').getBoundingClientRect().top`), true, 'Support navigation must not overlap company attribution at minimum window size');
+  await window.webContents.executeJavaScript(`document.querySelector('[data-page="overview"]').click()`);
+  for (const [installed, phase] of [[false,'ready'],[true,'bootstrap-pending'],[true,'ready']]) {
+    runtimeInstalled=installed;
+    runtimePhase=phase;
+    await window.webContents.executeJavaScript(`document.querySelector('[data-action="status"]').click()`);
+    await idle();
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[data-action="openWebsite"]').disabled`),!installed || phase!=='ready');
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[data-action="openAdmin"]').disabled`),!installed || phase!=='ready');
+  }
   console.log('PASS: all eight pages in EN/BG, support/company links, branding and compact navigation, SQL diagnostic evidence and explicit change confirmation, persistent language, preserved unsent fields, permanent donate footer, sandbox bridge, administrator form, password cleanup and check-only updates. Screenshots: artifacts/review/.');
 }
 app.whenReady().then(smoke).then(() => { clearTimeout(timer); app.exit(0); }).catch(error => { clearTimeout(timer); console.error(error); app.exit(1); });
