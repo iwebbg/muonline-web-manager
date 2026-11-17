@@ -160,7 +160,7 @@ function render() {
     sql: sqlPage(t),
     support: supportPage(t),
     overview: `<h1>${t('overviewTitle')}</h1><p class="lead">${t('overviewLead')}</p><div class="actions website-links"><button type="button" class="primary" data-action="openWebsite" disabled>${t('openWebsite')} ↗</button><button type="button" data-action="openAdmin" disabled>${t('openAdmin')} ↗</button></div><p id="websiteLinksHint" class="hint">${t('websiteLinksHint')}</p><div class="cards"><div class="card"><small>${t('webApplicationLabel')}</small><strong id="webVersion">${t('unchecked')}</strong><p>${t('webVersionHint')}</p></div><div class="card"><small>${t('accessLabel')}</small><strong id="accessMode">${t('unchecked')}</strong><p id="siteUrl">localhost / IP / Domain + SSL</p></div><div class="card"><small>${t('managerLabel')}</small><strong id="managerVersion">0.1.0</strong><p>${t('managerDescription')}</p></div></div>${servicesPanel(t)}`,
-    install: `<h1>${t('installTitle')}</h1><p class="lead">${t('installLead')}</p><p id="installRelease" class="hint"></p><form id="installForm"><h2>${t('sqlTitle')}</h2><div class="grid"><label>${t('sqlHost')}<input name="sqlHost" required placeholder="192.168.1.10"></label><label>${t('sqlPort')}<input name="sqlPort" type="number" min="1" max="65535" value="1433" required></label><label>${t('sqlAdmin')}<input name="sqlAdmin" value="sa" required autocomplete="off"></label><label>${t('sqlPassword')}<input name="sqlPassword" type="password" required autocomplete="off"></label><label>${t('profile')}<select name="profile" id="profiles" required></select></label><label>${t('appEnv')}<select name="appEnv"><option value="local">local</option><option value="production">production</option></select></label><label>${t('gameDatabase')}<input name="gameDatabase" value="MuOnline" required></label><label>${t('webDatabase')}<input name="webDatabase" value="MuOnline_Web" required></label><label>${t('appLogin')}<input name="appLogin" value="muonline_web_app" required></label><label>${t('gameLogin')}<input name="gameLogin" value="muonline_web_user" required></label></div><label class="check"><input name="trustCertificate" type="checkbox" checked>${t('trustCertificate')}</label><p class="hint">${t('passwordHint')}</p><fieldset><legend>${t('access')}</legend>${accessFields()}</fieldset><fieldset><legend>${t('firstAdmin')}</legend>${adminFields()}</fieldset><div class="actions"><button class="primary" type="submit">${t('install')}</button><button type="button" id="resumeInstall">${t('resumeInstall')}</button></div><p class="hint">${t('resumeHint')}</p></form><details class="panel install-helpers"><summary>${t('install.helpers')}</summary><p class="hint">${t('install.helpersHint')}</p><div class="actions"><button data-action="prerequisites">${t('prerequisites')}</button><button data-action="installWsl">${t('installWsl')}</button><button data-action="installDocker">${t('installDocker')}</button><button type="button" id="openSqlTroubleshooting">${t('sql.title')}</button></div> <div class="warning">${t('dockerWarning')}</div><p id="linuxAccess" class="hint"></p><button type="button" data-action="openLogs">${t('logs.open')}</button></details><details class="panel uninstall-panel"><summary>${t('uninstall.title')}</summary><p class="warning">${t('uninstall.warning', { distribution: settings.distribution ?? 'Ubuntu-24.04' })}</p><form id="uninstallForm"><label>${t('uninstall.typeName', { distribution: settings.distribution ?? 'Ubuntu-24.04' })}<input id="uninstallName" autocomplete="off" spellcheck="false"></label><label class="check"><input id="uninstallConfirm" type="checkbox">${t('uninstall.confirm')}</label><button class="danger" id="uninstallButton" type="submit" disabled>${t('uninstall.title')}</button></form></details>`,
+    install: `<h1>${t('installTitle')}</h1><p class="lead">${t('installLead')}</p><p id="installRelease" class="hint"></p><form id="installForm"><h2>${t('sqlTitle')}</h2><div class="grid"><label>${t('sqlHost')}<input name="sqlHost" required placeholder="192.168.1.10"></label><label>${t('sqlPort')}<input name="sqlPort" type="number" min="1" max="65535" value="1433" required></label><label>${t('sqlAdmin')}<input name="sqlAdmin" value="sa" required autocomplete="off"></label><label>${t('sqlPassword')}<input name="sqlPassword" type="password" required autocomplete="off"></label><label>${t('profile')}<select name="profile" id="profiles" required></select></label><label>${t('appEnv')}<select name="appEnv"><option value="local">local</option><option value="production">production</option></select></label><label>${t('gameDatabase')}<input name="gameDatabase" value="MuOnline" required></label><label>${t('webDatabase')}<input name="webDatabase" value="MuOnline_Web" required></label><label>${t('appLogin')}<input name="appLogin" value="muonline_web_app" required></label><label>${t('gameLogin')}<input name="gameLogin" value="muonline_web_user" required></label></div><label class="check"><input name="trustCertificate" type="checkbox" checked>${t('trustCertificate')}</label><p class="hint">${t('passwordHint')}</p><fieldset><legend>${t('access')}</legend>${accessFields()}</fieldset><fieldset><legend>${t('firstAdmin')}</legend>${adminFields()}</fieldset><div class="actions"><button class="primary" type="submit">${t('install')}</button><button type="button" id="resumeInstall">${t('resumeInstall')}</button></div><p class="hint">${t('resumeHint')}</p></form><details class="panel install-helpers"><summary>${t('install.helpers')}</summary><p class="hint">${t('install.helpersHint')}</p><div class="actions"><button data-action="prerequisites">${t('prerequisites')}</button><button data-action="installWsl">${t('installWsl')}</button><button data-action="installDocker">${t('installDocker')}</button><button type="button" id="openSqlTroubleshooting">${t('sql.title')}</button></div> <div class="warning">${t('dockerWarning')}</div><p id="linuxAccess" class="hint"></p><button type="button" data-action="openLogs">${t('logs.open')}</button></details><details class="panel uninstall-panel"><summary>${t('uninstall.title')}</summary><p class="warning">${t('uninstall.warning', { distribution: settings.distribution ?? 'Ubuntu-24.04' })}</p><button type="button" data-action="status">${t('checkStatus')}</button><p id="uninstallTarget" class="hint"></p><button type="button" id="uninstallBackup">${t('uninstall.backup')}</button><form id="uninstallForm"><div id="uninstallSqlFields"><label>${t('sqlAdmin')}<input id="uninstallSqlAdmin" autocomplete="off" maxlength="128"></label><label>${t('sqlPassword')}<input id="uninstallSqlPassword" type="password" autocomplete="off" maxlength="4096"></label><label class="check"><input id="uninstallSqlConfirm" type="checkbox">${t('uninstall.sqlConfirm')}</label></div><label>${t('uninstall.typeName', { distribution: settings.distribution ?? 'Ubuntu-24.04' })}<input id="uninstallName" autocomplete="off" spellcheck="false"></label><label class="check"><input id="uninstallConfirm" type="checkbox">${t('uninstall.confirm')}</label><button class="danger" id="uninstallButton" type="submit" disabled>${t('uninstall.title')}</button></form></details>`,
     access: `<h1>${t('accessTitle')}</h1><p class="lead">${t('accessLead')}</p><form id="accessForm">${accessFields()}<div class="warning">${t('accessWarning')}</div><button class="primary" type="submit">${t('applyAccess')}</button></form>`,
     admins: administratorsPage(t, adminFields()),
     backup: `<h1>${t('backupTitle')}</h1><p class="lead">${t('backupLead')}</p><form id="backupForm">${backupFields()}<button class="primary" type="submit">${t('createBackup')}</button></form><p class="hint">${t('backupHint')}</p>`,
@@ -215,6 +215,11 @@ function populate(fillSettings = false) {
   if (page === 'install') {
     const feed = feeds.web;
     document.querySelector('#installRelease').textContent = feed?.ready ? t('installRelease', { version: feed.version }) : releaseDescription(feed, 'web');
+    const target = status?.uninstallTarget;
+    document.querySelector('#uninstallTarget').textContent = target
+      ? t('uninstall.target', target) : t(status?.installed === false ? 'uninstall.noSql' : 'uninstall.checkFirst');
+    document.querySelector('#uninstallSqlFields').hidden = status?.installed === false;
+    updateUninstallButton();
   }
   if (page === 'overview') {
     populateServices(t, status, busy, statusCheckedAt, lastAction);
@@ -412,12 +417,12 @@ async function perform(action, input = {}, quiet = false) {
     }
     if (progressTimer) clearInterval(progressTimer);
     if (trackSetup) await refreshSetupStatus().catch(() => {});
-    if (['install', 'resumeInstall', 'admin', 'backup', 'update', 'sqlDiagnose', 'adminUpdate'].includes(action)) {
+    if (['uninstallRuntime', 'install', 'resumeInstall', 'admin', 'backup', 'update', 'sqlDiagnose', 'adminUpdate'].includes(action)) {
       document.querySelectorAll('input[type="password"]').forEach(input => { input.value = ''; });
     }
     busy = false;
     const uninstallButton = document.querySelector('#uninstallButton');
-    if (uninstallButton) { document.querySelector('#uninstallConfirm').checked = false; document.querySelector('#uninstallName').value = ''; }
+    if (uninstallButton) { document.querySelector('#uninstallSqlConfirm').checked = false; document.querySelector('#uninstallConfirm').checked = false; document.querySelector('#uninstallName').value = ''; }
     document.querySelectorAll('button').forEach(button => { button.disabled = false; });
     document.querySelector('#language').disabled = false;
     translateShell();
@@ -454,17 +459,43 @@ function localizeValidation(field) {
   }
 }
 
+/** Require current displayed SQL targets and separate irreversible deletion confirmations. */
+function updateUninstallButton() {
+  const button = document.querySelector('#uninstallButton');
+  if (!button) return;
+  const sqlReady = status?.installed === false || (status?.uninstallTarget
+    && document.querySelector('#uninstallSqlConfirm').checked
+    && document.querySelector('#uninstallSqlAdmin').value.trim()
+    && document.querySelector('#uninstallSqlPassword').value);
+  button.disabled = busy || !sqlReady || document.querySelector('#uninstallName').value !== settings.distribution
+    || !document.querySelector('#uninstallConfirm').checked;
+}
+
 /** Bind only the static forms and fixed action names rendered on the current page. */
 function bind() {
   const uninstallForm = document.querySelector('#uninstallForm');
   if (uninstallForm) {
-    const updateUninstall = () => { document.querySelector('#uninstallButton').disabled = busy || document.querySelector('#uninstallName').value !== settings.distribution || !document.querySelector('#uninstallConfirm').checked; };
+    const updateUninstall = updateUninstallButton;
+    document.querySelector('#uninstallBackup').addEventListener('click', () => {
+      if (busy) return;
+      page = 'backup';
+      render();
+    });
     uninstallForm.addEventListener('input', updateUninstall);
     uninstallForm.addEventListener('change', updateUninstall);
     uninstallForm.addEventListener('submit', event => {
       event.preventDefault();
       if (document.querySelector('#uninstallButton').disabled) return;
-      perform('uninstallRuntime', { confirmed: document.querySelector('#uninstallConfirm').checked, distributionConfirmation: document.querySelector('#uninstallName').value });
+      perform('uninstallRuntime', {
+        confirmed: document.querySelector('#uninstallConfirm').checked,
+        distributionConfirmation: document.querySelector('#uninstallName').value,
+        sqlRemoval: {
+          confirmed: document.querySelector('#uninstallSqlConfirm').checked,
+          target: status?.uninstallTarget,
+          admin_username: document.querySelector('#uninstallSqlAdmin').value,
+          admin_password: document.querySelector('#uninstallSqlPassword').value
+        }
+      });
     });
   }
   bindServices(t, () => ({ status, busy, checkedAt: statusCheckedAt, action: lastAction }), perform);

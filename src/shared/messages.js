@@ -2,6 +2,10 @@ import { resolveLocale, translate } from './i18n.js';
 
 /** Known application messages only. Arbitrary logs and SQL diagnostics are not translated. */
 const bulgarian = {
+  "Untracked application files exist. Recover installation state before uninstalling.": "Има файлове на приложение без запазено състояние. Възстанови състоянието преди деинсталиране.",
+  "Confirm the exact SQL endpoint, web database and login before uninstalling.": "Потвърди точния SQL сървър, web база и login преди деинсталиране.",
+  "Temporary SQL sysadmin credentials are required for uninstall.": "За деинсталацията са нужни временни SQL sysadmin credentials.",
+  "The SQL login differs from the saved installation. Reconcile configuration before uninstalling.": "SQL login-ът се различава от запазената инсталация. Съгласувай конфигурацията преди деинсталиране.",
   "Cannot verify SQL targets before backup or update. Check application configuration.": "SQL връзките не могат да бъдат проверени преди архивиране или обновяване. Проверете конфигурацията на приложението.",
   "SQL targets or game profile differ from the saved installation. Reconcile the runtime configuration before backup or update.": "SQL връзките или game профилът се различават от запазената инсталация. Съгласувайте конфигурацията преди архивиране или обновяване.",
   "Site environment contains an unterminated quoted value.": "В конфигурацията на сайта има незатворена кавичка. Поправете файла преди промяна на достъпа.",
@@ -146,6 +150,14 @@ const prefixes = [
 
 /** Translate manager-owned messages while retaining identifiers, URLs and recovery paths. */
 export function translateMessage(locale, message) {
+  const cleanup = typeof message === 'string' && /^SQL cleanup incomplete: code=([a-z_]+); database=([a-z_]+); login=([a-z_]+)$/.exec(message);
+  if (cleanup) {
+    return translate(locale, 'uninstall.failure') + '\n' + translate(locale, 'uninstall.reason.' + cleanup[1])
+      + '\n' + translate(locale, 'uninstall.progress', {
+        database: translate(locale, 'uninstall.status.' + cleanup[2]),
+        login: translate(locale, 'uninstall.status.' + cleanup[3])
+      });
+  }
   if (typeof message !== 'string' || resolveLocale(locale) === 'en') {
     return message;
   }

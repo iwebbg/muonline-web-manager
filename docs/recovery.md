@@ -157,7 +157,7 @@ journal spanning Docker, filesystem and SQL.
 NSIS removes the panel only. Stop the project and export backups before separately
 removing runtime data. The Windows task can be disabled/removed in Task Scheduler
 (`MuOnline-Web-WSL`); certificate renewal uses `muonline-certificates.timer` in WSL.
-SQL databases/logins, Docker volumes and Ubuntu are never deleted by panel uninstall.
+SQL databases/logins, Docker volumes and Ubuntu are never deleted by NSIS panel uninstall.
 No cleanup command here authorizes deleting a user's game data.
 
 The source-only [dev reset](development-wsl.md) requires exact-name terminal
@@ -167,19 +167,50 @@ lock prevents reset/setup while that panel is running.
 
 ## Runtime uninstall from the panel
 
-First installation contains a separate destructive runtime removal section. The user
-must acknowledge permanent deletion and type the exact main-owned distribution name.
-Main records an uninstall checkpoint, inventories that exact identity, attempts to
-copy redacted WSL diagnostics into Windows-local support logs, stops/removes only its
-root-folder keepalive task, then invokes `wsl --unregister` for that fixed identity.
-A failed inventory/task cleanup never proceeds to unregister. Retry is safe when a
-previous attempt already removed the distro; the journal is cleared only on success.
+First installation contains a separate destructive runtime removal section. Check
+status to display the saved SQL host/port, web database and dedicated application
+login. The user confirms those SQL resources separately, supplies temporary SQL
+sysadmin credentials, acknowledges permanent distribution deletion and types the exact
+main-owned distribution name. A backup button opens the existing backup page; export
+SQL and file backups off the runtime before proceeding. Game databases, game logins
+and profile-added game schema are retained.
 
-Unregister permanently removes all data in the distribution, including Docker
-volumes, website uploads, certificates, backups and any other local workloads there.
-This cannot be rolled back. It does not remove shared Windows WSL features, other
-distributions, the panel, local support logs or external SQL databases/logins. NSIS
-uninstall remains independent and never invokes this operation automatically.
+Main records an uninstall checkpoint, inventories its exact distribution and attempts
+to copy redacted diagnostics to Windows-local support logs. Before task cleanup or
+WSL unregister, the worker verifies saved targets against resolved Compose configuration,
+records `uninstall-sql-pending`, and stops nginx/app/queue/scheduler. It runs:
+
+```sh
+docker compose --project-name muonline-manager --file /opt/muonline-web/compose.json run --rm --no-deps -T --entrypoint php app artisan app:database:uninstall --force --no-interaction
+```
+
+Arguments are arrays; one JSON object goes through private stdin, with host, port,
+database, login, admin_username, admin_password and confirmed=true. Temporary credentials
+are never written to a file, environment, saved state or argv. This requires an installed
+web release containing the command; an older release is not silently bypassed. The
+Laravel command independently verifies effective targets, protected identities, web
+schema signatures and shared SQL resources before deleting anything.
+
+A nonzero process exit, malformed/missing JSON, refusal, incomplete resource status,
+or Docker failure retains the runtime and its configuration. The panel shows separate
+web database/login progress in EN/BG and clears the password on success and failure.
+SQL DDL is not transactional: a removed database is not automatically rolled back.
+Services may remain stopped. Retry deinstallation after fixing the reported issue;
+the Artisan command handles resources already absent. Automatic Start/update is blocked
+while the private state has an uninstall phase. Manual SQL recovery must precede any
+attempt to restore normal website operation.
+
+Only exit 0 plus a validated success for both SQL resources records
+`uninstall-sql-complete`. Task cleanup and `wsl --unregister` then run for the fixed
+main-owned identity. If those Windows steps fail, retry reuses the saved successful
+SQL checkpoint instead of issuing destructive SQL again. An empty runtime without
+application/state files may be removed without SQL authorization; untracked application
+files block this bypass. An already absent distribution can finish journal/task cleanup.
+
+Unregister permanently removes all data in the distribution, including Docker volumes,
+website uploads, certificates, backups and other workloads there. Other distributions,
+shared Windows WSL features, the panel and Windows-local support logs are retained.
+NSIS uninstall never invokes this operation automatically.
 
 ## Windows support logs
 

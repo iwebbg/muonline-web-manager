@@ -5,7 +5,7 @@ import path from 'node:path';
 /** Collect request secrets in memory only; never save request bodies, argv or stdin. */
 export function secretValues(value, result = new Set()) {
   if (value && typeof value === 'object') for (const [key, item] of Object.entries(value)) {
-    if (typeof item === 'string' && item && (/password|secret|token|key/i.test(key) || key === 'sqlAdmin')) result.add(item);
+    if (typeof item === 'string' && item && (/password|secret|token|key/i.test(key) || ['sqlAdmin', 'admin_username'].includes(key))) result.add(item);
     else if (item && typeof item === 'object') secretValues(item, result);
   }
   return result;

@@ -268,7 +268,7 @@ export class Backend {
     await this.runner('powershell.exe', encodedPowerShell(script), '', 60000);
   }
 
-  /** Explicit irreversible removal of only the main-owned distro/task, never global WSL or SQL. */
+  /** Explicit irreversible removal of only the main-owned distro/task, never global WSL; SQL cleanup must finish before unregister. */
   async uninstallRuntime(input) {
     this.requireWindows();
     if (input?.confirmed !== true || input?.distributionConfirmation !== this.profile.distribution) {
@@ -280,6 +280,15 @@ export class Backend {
       if (exists) {
         try { await this.activeLog?.append(await this.runtime({ action: 'runtimeLogs' })); }
         catch { await this.activeLog?.append('Existing WSL logs were unavailable before uninstall.'); }
+        const cleanup = await this.runtime({ action: 'uninstallDatabase', sqlRemoval: input.sqlRemoval });
+        if (cleanup?.ok !== true || !['uninstalled', 'not_installed'].includes(cleanup.code)) {
+          const codes = new Set(['confirmation_required', 'invalid_input', 'target_mismatch', 'protected_database', 'protected_login', 'sysadmin_required', 'privileged_login', 'shared_login', 'shared_database', 'cannot_verify_shared_login', 'unverified_web_database', 'database_unavailable', 'sql_operation_failed', 'uninstall_failed', 'command_unavailable']);
+          const statuses = new Set(['not_checked', 'retained', 'removed', 'already_absent', 'unknown']);
+          const code = codes.has(cleanup?.code) ? cleanup.code : 'command_unavailable';
+          const database = statuses.has(cleanup?.database) ? cleanup.database : 'unknown';
+          const login = statuses.has(cleanup?.login) ? cleanup.login : 'unknown';
+          throw new Error('SQL cleanup incomplete: code=' + code + '; database=' + database + '; login=' + login);
+        }
       }
       const script = "$ErrorActionPreference='Stop'; $task=Get-ScheduledTask | Where-Object { $_.TaskName -eq '" + this.profile.taskName + "' -and $_.TaskPath -eq '\\' }; if($task){ $task | Stop-ScheduledTask; $task | Unregister-ScheduledTask -Confirm:$false }";
       await this.runner('powershell.exe', encodedPowerShell(script), '', 60000);

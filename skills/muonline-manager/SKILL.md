@@ -43,3 +43,12 @@ an unsigned install. Install chooses the newest stable tag afresh; never silentl
 back when that tag lacks signed artifacts. Installed versions come from private WSL
 state and advance only after successful provisioning/update. Keep version prefixes
 and trust setup out of ordinary user flows.
+
+
+Runtime uninstall requires the installed web release's `app:database:uninstall --force
+--no-interaction` command. Show and confirm saved SQL targets, pass temporary sysadmin
+credentials only in private JSON stdin, and stop web/queue/scheduler before its one-shot
+`--entrypoint php` container. Require exit 0 and valid success for both web database and
+login before removing the fixed WSL identity. Retain runtime/configuration on refusal,
+malformed output or partial failure. Keep game data/logins. Persist pending/completed
+SQL phases for retries; SQL DROP has no automatic rollback. See the recovery document.

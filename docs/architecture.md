@@ -74,6 +74,14 @@ read WSL diagnostics. Local files survive removal of the runtime distribution.
 The log endpoint redacts known runtime secrets and common credential fields, but logs
 still contain operational/user information and should not be shared publicly.
 
+Runtime removal is a separate explicitly confirmed action. It exposes the saved SQL
+endpoint/database/login through status, passes temporary sysadmin authorization only
+through private stdin, and stops nginx/app/queue/scheduler before the installed
+`app:database:uninstall --force --no-interaction` command. A one-shot PHP container
+bypasses the bootstrap entrypoint. Only verified complete SQL success allows WSL
+unregister; pending/completed private checkpoints protect retries and block normal
+Start/update. Game SQL resources remain. See [recovery](recovery.md#runtime-uninstall-from-the-panel).
+
 ## Linux layout and lifecycle
 
 `/opt/muonline-web/` contains `application/`, `compose.json`, `nginx.conf`, private

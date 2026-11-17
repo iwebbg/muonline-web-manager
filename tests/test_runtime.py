@@ -32,7 +32,7 @@ class RuntimeTests(unittest.TestCase):
         for item in self.patches:
             item.start()
         worker.APP.mkdir()
-        self.state = {'version': '1.3.0', 'phase': 'ready', 'access': worker.access_settings({'mode': 'local'}), 'environment': {'APP_KEY': 'original-key', 'APP_ENV': 'production', 'DB_DATABASE': 'Web', 'GAME_DB_MUONLINE': 'Game'}}
+        self.state = {'version': '1.3.0', 'phase': 'ready', 'access': worker.access_settings({'mode': 'local'}), 'environment': {'APP_KEY': 'original-key', 'APP_ENV': 'production', 'DB_HOST': 'sql.example', 'DB_PORT': '1433', 'DB_USERNAME': 'web_app', 'DB_DATABASE': 'Web', 'GAME_DB_MUONLINE': 'Game'}}
         worker.save_state(self.state)
 
     def tearDown(self):

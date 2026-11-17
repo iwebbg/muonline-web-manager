@@ -49,3 +49,11 @@ test('language persists independently of release feeds and rejects unsupported I
     await rm(folder, { recursive: true, force: true });
   }
 });
+
+
+test('SQL uninstall outcomes translate progress and recovery instructions in both languages', () => {
+  const error = 'SQL cleanup incomplete: code=sql_operation_failed; database=removed; login=retained';
+  assert.match(translateMessage('en', error), /Web database: removed; web login: retained/);
+  assert.match(translateMessage('bg', error), /Web база: изтрит; web login: запазен/);
+  assert.match(translateMessage('bg', 'SQL cleanup incomplete: code=command_unavailable; database=unknown; login=unknown'), /app:database:uninstall/);
+});

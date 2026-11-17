@@ -272,3 +272,29 @@ before any extraction. No security assertion or Windows test was skipped to fix 
 Regression checks reproduce Windows newline translation and ZipInfo normalization on
 Linux, including malformed raw NUL names. All 39 Node and 41 Python tests passed locally.
 The actual Windows CI rerun remains required to confirm the runner result.
+
+
+## SQL cleanup before runtime removal — 2026-11-17
+
+The manager now uses the Laravel `app:database:uninstall` contract documented in the
+sibling installation guide. The panel displays the saved SQL endpoint/web database/login,
+requires separate SQL confirmation plus temporary sysadmin credentials, and offers the
+backup page before irreversible removal. EN/BG errors report separate database/login
+progress. Passwords and SQL confirmation are cleared after both success and refusal.
+
+The worker checks target drift, checkpoints uninstall-sql-pending, stops website
+services and invokes a one-shot application container with the PHP entrypoint, argument
+arrays and private JSON stdin. Exit status and bounded JSON resource states must both
+prove complete success before uninstall-sql-complete and Windows task/WSL removal.
+Partial SQL deletion cannot be rolled back; runtime/configuration remain for retry.
+No game cleanup or credential persistence was added. An older release without the
+command fails closed and requires a web release containing it.
+
+Verification: 58 Node and 64 Python tests pass, plus the Electron EN/BG smoke test
+covering refused SQL cleanup, retry, confirmation and password erasure. The actual
+Laravel command was also invoked from current read-only application source with
+image-provided vendor in a disposable network-disabled PHP container: missing-force
+and malformed-input refusals returned the expected JSON and exit 1. No SQL was touched.
+Actual SQL DROP/login removal and the complete Windows/WSL sequence still require
+acceptance testing on a disposable installation. The sibling Laravel files were not
+modified by this manager integration.

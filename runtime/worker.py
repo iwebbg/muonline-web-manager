@@ -38,7 +38,7 @@ def diagnostic_secrets(value):
     """Collect known secrets recursively without saving the request or private state."""
     if isinstance(value, dict):
         for key, item in value.items():
-            if isinstance(item, str) and item and (re.search(r'password|secret|token|key', key, re.I) or key == 'sqlAdmin'):
+            if isinstance(item, str) and item and (re.search(r'password|secret|token|key', key, re.I) or key in ('sqlAdmin', 'admin_username')):
                 DIAGNOSTIC_SECRETS.add(item)
             else:
                 diagnostic_secrets(item)
@@ -212,7 +212,7 @@ def docker_failure(arguments, code, output='', timed_out=False):
     return 'Docker operation failed: ' + operation + ' (exit ' + str(code) + '; reason ' + reason + location + '). Output withheld to protect credentials.'
 
 
-def run(arguments, *, data=None, timeout=1800, allow_failure=False):
+def run(arguments, *, data=None, timeout=1800, allow_failure=False, return_process=False):
     """Execute argument arrays without a shell and suppress potentially secret diagnostics."""
     started = time.monotonic()
     development_log('start', arguments)
@@ -231,12 +231,12 @@ def run(arguments, *, data=None, timeout=1800, allow_failure=False):
         if arguments[0] == 'docker':
             raise RuntimeError(docker_failure(arguments, result.returncode, (result.stdout or '') + '\n' + (result.stderr or '')))
         raise RuntimeError('Runtime command failed: ' + arguments[0] + ' (exit ' + str(result.returncode) + '). Check runtime diagnostics; output is withheld to protect credentials.')
-    return result.stdout[-200000:]
+    return result if return_process else result.stdout[-200000:]
 
 
-def compose(*arguments, data=None, allow_failure=False):
+def compose(*arguments, data=None, allow_failure=False, return_process=False):
     """Operate only on the manager-owned Compose project."""
-    return run(['docker', 'compose', '--project-name', 'muonline-manager', '--file', str(COMPOSE), *arguments], data=data, allow_failure=allow_failure)
+    return run(['docker', 'compose', '--project-name', 'muonline-manager', '--file', str(COMPOSE), *arguments], data=data, allow_failure=allow_failure, return_process=return_process)
 
 
 def atomic(path, content):
@@ -998,6 +998,68 @@ def update(request):
             shutil.rmtree(staging)
 
 
+def uninstall_target(state):
+    """Expose only the saved SQL identity that the user must explicitly confirm."""
+    environment = state['environment']
+    return {'host': environment['DB_HOST'], 'port': int(environment['DB_PORT']),
+            'database': environment['DB_DATABASE'], 'login': environment['DB_USERNAME']}
+
+
+def uninstall_database(details):
+    """Stop website processes and remove SQL resources before allowing WSL deletion.
+
+    SQL DDL cannot be rolled back. Persist a pending phase before stopping services,
+    retain a bounded result for retries, and never save temporary authorization.
+    """
+    if not STATE.exists():
+        require(not APP.exists(), 'Untracked application files exist. Recover installation state before uninstalling.')
+        return {'ok': True, 'code': 'not_installed'}
+    state = load_state()
+    target = uninstall_target(state)
+    require(isinstance(details, dict) and details.get('confirmed') is True
+            and details.get('target') == target,
+            'Confirm the exact SQL endpoint, web database and login before uninstalling.')
+    if state.get('phase') == 'uninstall-sql-complete':
+        return state['sqlRemoval']
+    username = single_line(details.get('admin_username', ''), 128)
+    secret = single_line(details.get('admin_password', ''), 4096)
+    require(username and secret, 'Temporary SQL sysadmin credentials are required for uninstall.')
+    validate_backup_configuration(state)
+    configuration = json.loads(compose('config', '--format', 'json'))
+    require(configuration['services']['app']['environment'].get('DB_USERNAME') == target['login'],
+            'The SQL login differs from the saved installation. Reconcile configuration before uninstalling.')
+    save_state(dict(state, phase='uninstall-sql-pending'))
+    compose('stop', 'nginx', 'queue', 'scheduler', 'app')
+    payload = dict(target, admin_username=username, admin_password=secret, confirmed=True)
+    result = compose('run', '--rm', '--no-deps', '-T', '--entrypoint', 'php', 'app',
+                     'artisan', 'app:database:uninstall', '--force', '--no-interaction',
+                     data=json.dumps(payload) + '\n', allow_failure=True, return_process=True)
+    codes = {'uninstalled', 'confirmation_required', 'invalid_input', 'target_mismatch',
+             'protected_database', 'protected_login', 'sysadmin_required', 'privileged_login',
+             'shared_login', 'shared_database', 'cannot_verify_shared_login', 'unverified_web_database',
+             'database_unavailable', 'sql_operation_failed', 'uninstall_failed'}
+    statuses = {'not_checked', 'retained', 'removed', 'already_absent', 'unknown'}
+    try:
+        response = json.loads(result.stdout)
+        require(isinstance(response, dict) and type(response.get('ok')) is bool
+                and response.get('code') in codes
+                and response.get('database') in statuses and response.get('login') in statuses
+                and type(response.get('retryable')) is bool, 'Invalid SQL cleanup response.')
+        response = {key: response[key] for key in ('ok', 'code', 'database', 'login', 'retryable')}
+    except (ValueError, TypeError):
+        response = {'ok': False, 'code': 'command_unavailable', 'database': 'unknown', 'login': 'unknown', 'retryable': True}
+    complete = (result.returncode == 0 and response['ok'] is True
+                and response['code'] == 'uninstalled'
+                and response['database'] in ('removed', 'already_absent')
+                and response['login'] in ('removed', 'already_absent'))
+    if not complete:
+        response['ok'] = False
+        if response['code'] == 'uninstalled':
+            response['code'] = 'sql_operation_failed'
+    save_state(dict(state, phase='uninstall-sql-complete' if complete else 'uninstall-sql-pending', sqlRemoval=response))
+    return response
+
+
 def dispatch(request):
     """Expose an explicit runtime operation allow-list, with no arbitrary command endpoint."""
     action = request.get('action')
@@ -1014,6 +1076,8 @@ def dispatch(request):
         require(run(['uname', '-m']).strip() == 'x86_64', 'This runtime release requires x64 WSL. ARM64 is not supported yet.')
         require('--env-from-file' in run(['docker', 'compose', 'run', '--help']), 'Upgrade Docker Compose; --env-from-file support is required.')
         return {'docker': run(['docker', 'info', '--format', '{{.ServerVersion}}']).strip(), 'compose': run(['docker', 'compose', 'version', '--short']).strip(), 'systemd': run(['systemctl', 'is-active', 'docker']).strip()}
+    if action == 'uninstallDatabase':
+        return uninstall_database(request.get('sqlRemoval'))
     if action == 'install':
         return install(request)
     if action == 'status':
@@ -1026,7 +1090,7 @@ def dispatch(request):
         except RuntimeError as exception:
             services = '[]'
             error = str(exception)
-        return {'installed': True, 'version': state['version'], 'phase': state.get('phase'), 'access': state['access'], 'gameWrites': game_write_mode(), 'services': services, 'runtimeError': error}
+        return {'installed': True, 'version': state['version'], 'phase': state.get('phase'), 'access': state['access'], 'gameWrites': game_write_mode(), 'services': services, 'runtimeError': error, 'uninstallTarget': uninstall_target(state)}
     state = load_state()
     if action == 'setGameWrites':
         return apply_game_writes(state, request.get('gameWrites'))
@@ -1080,7 +1144,7 @@ def main():
             request = json.load(sys.stdin)
             DEVELOPMENT_DIAGNOSTICS = request.get('developmentDiagnostics') is True
             RECORD_DIAGNOSTICS = request.get('recordDiagnostics') is True
-            DIAGNOSTIC_ACTION = request.get('action') if request.get('action') in ('install', 'resumeInstall', 'setGameWrites', 'prepareWsl', 'linuxStatus', 'prerequisites', 'status', 'logs', 'developmentLogs', 'start', 'stop', 'restart', 'update', 'backup', 'admin', 'adminList', 'adminUpdate', 'adminDelete', 'doctor', 'access') else 'unknown'
+            DIAGNOSTIC_ACTION = request.get('action') if request.get('action') in ('uninstallDatabase', 'install', 'resumeInstall', 'setGameWrites', 'prepareWsl', 'linuxStatus', 'prerequisites', 'status', 'logs', 'developmentLogs', 'start', 'stop', 'restart', 'update', 'backup', 'admin', 'adminList', 'adminUpdate', 'adminDelete', 'doctor', 'access') else 'unknown'
             if DEVELOPMENT_DIAGNOSTICS or RECORD_DIAGNOSTICS:
                 diagnostic_secrets(request)
             response = {'ok': True, 'result': dispatch(request)}

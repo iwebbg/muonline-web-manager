@@ -20,6 +20,7 @@ let identities = [
   {id:2,name:'Game Master',email:'gm@example.test',role:'game_master',is_active:true},
   {id:3,name:'Second admin',email:'second@example.test',role:'administrator',is_active:true}
 ];
+let refuseUninstall = true;
 const timer = setTimeout(() => { console.error('Electron smoke test timed out.'); app.exit(1); }, 60000);
 
 /** Wait until initial settings, feed and status calls finish. */
@@ -46,7 +47,7 @@ async function smoke() {
     if (action === 'setLanguage') {
       language = input.language;
     }
-    if (action === 'uninstallRuntime') { assert.equal(input.distributionConfirmation, 'MuOnline-Dev'); assert.equal(input.confirmed, true); runtimeInstalled=false; }
+    if (action === 'uninstallRuntime') { assert.equal(input.distributionConfirmation, 'MuOnline-Dev'); assert.equal(input.confirmed, true); assert.equal(input.sqlRemoval.confirmed, true); assert.equal(input.sqlRemoval.target.database, 'MuOnline_Web'); assert.equal(input.sqlRemoval.admin_password, 'Private-Password/42!'); if (refuseUninstall) return { ok: false, error: 'SQL cleanup incomplete: code=sql_operation_failed; database=removed; login=retained' }; runtimeInstalled=false; }
     if (action === 'setGameWrites') {
       assert.equal(input.gameWrites.confirmed, true);
       runtimeWrites = input.gameWrites.enabled ? 'enabled' : 'disabled';
@@ -82,7 +83,7 @@ async function smoke() {
       sqlCopyPlan: { copied: true },
       settings: { distribution: 'MuOnline-Dev', setup: { schema: 1, distribution: 'MuOnline-Dev', linuxUser: 'muonline', stage: 'ready', status: 'complete', completed: [], configuration: {} }, cdn: 'https://cdn.interweb.bg', webChannel: 'muonline-web/releases/v1.3.0', managerChannel: 'muonline-web/manager/stable', trustedKeys: [], language },
       updates: { web: pending ? { latestVersion: '1.5.0', newTag: true, installedVersion, installationKnown: true, error: 'Release is not ready.', ready: false, available: false } : { version: '1.4.0', latestVersion: '1.4.0', installedVersion, installationKnown: true, ready: true, available: installedVersion !== '1.4.0', profiles: ['registry_profile'] }, manager: { error: 'Not published' } },
-      status: { gameWrites: runtimeWrites, installed: runtimeInstalled, phase: runtimePhase, version: installedVersion, access: runtimeAccess, services:JSON.stringify([{Service:'app',State:runtimeServiceState}]) }
+      status: { uninstallTarget: { host: 'sql.example', port: 1433, database: 'MuOnline_Web', login: 'web_app' }, gameWrites: runtimeWrites, installed: runtimeInstalled, phase: runtimePhase, version: installedVersion, access: runtimeAccess, services:JSON.stringify([{Service:'app',State:runtimeServiceState}]) }
     };
     return { ok: true, result: results[action] ?? 'Completed test operation' };
   });
@@ -293,11 +294,22 @@ async function smoke() {
   await window.webContents.executeJavaScript(`document.querySelector('[data-page="install"]').click(); document.querySelector('.uninstall-panel').open=true; document.querySelector('#uninstallName').value='Personal-Linux'; document.querySelector('#uninstallConfirm').checked=true; document.querySelector('#uninstallForm').dispatchEvent(new Event('input'));`);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').disabled`), true);
   await window.webContents.executeJavaScript(`document.querySelector('#uninstallName').value='MuOnline-Dev'; document.querySelector('#uninstallForm').dispatchEvent(new Event('input'));`);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').disabled`), true);
+  assert.match(await window.webContents.executeJavaScript(`document.querySelector('#uninstallTarget').textContent`), /sql.example:1433.*MuOnline_Web.*web_app/);
+  await window.webContents.executeJavaScript(`document.querySelector('#uninstallSqlAdmin').value='sa'; document.querySelector('#uninstallSqlPassword').value='Private-Password/42!'; document.querySelector('#uninstallSqlConfirm').checked=true; document.querySelector('#uninstallForm').dispatchEvent(new Event('input'));`);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').disabled`), false);
   await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').click();`);
   await idle();
-  assert.equal(operations.filter(op => op.action === 'uninstallRuntime').length, 1);
+  assert.equal(runtimeInstalled, true);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallSqlPassword').value`), '');
+  assert.match(await window.webContents.executeJavaScript(`document.querySelector('#output').textContent`), /retained|запазен/);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').disabled`), true);
+  refuseUninstall = false;
+  await window.webContents.executeJavaScript(`document.querySelector('#uninstallName').value='MuOnline-Dev'; document.querySelector('#uninstallConfirm').checked=true; document.querySelector('#uninstallSqlPassword').value='Private-Password/42!'; document.querySelector('#uninstallSqlConfirm').checked=true; document.querySelector('#uninstallForm').dispatchEvent(new Event('input')); document.querySelector('#uninstallButton').click();`);
+  await idle();
+  assert.equal(operations.filter(op => op.action === 'uninstallRuntime').length, 2);
   assert.equal(runtimeInstalled, false);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallSqlPassword').value`), '');
   console.log('PASS: all eight pages in EN/BG, support/company links, branding and compact navigation, SQL diagnostic evidence and explicit change confirmation, persistent language, preserved unsent fields, permanent donate footer, sandbox bridge, administrator form, password cleanup and check-only updates. Screenshots: artifacts/review/.');
 }
 app.whenReady().then(smoke).then(() => { clearTimeout(timer); app.exit(0); }).catch(error => { clearTimeout(timer); console.error(error); app.exit(1); });
