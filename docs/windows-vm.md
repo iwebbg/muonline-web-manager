@@ -29,3 +29,7 @@ supports it before running setup. See [Microsoft's WSL VM FAQ](https://learn.mic
 
 This repository does not provision a hypervisor or claim that these manual Windows
 checks have passed. Existing Linux contract/UI tests are separate evidence.
+
+For the 2 GB WSL limit and external 100–200 client workload, follow
+[resource and load testing](performance.md). Apply global WSL limits before the clean
+installation, and measure remote SQL separately from the web VM.

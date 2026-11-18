@@ -13,6 +13,8 @@
     "test:python": "node scripts/run-python-tests.js",
     "dist:win": "electron-builder --win nsis --x64 --publish never",
     "release:web": "python3 scripts/package-release.py",
+    "resources:wsl": "node scripts/wsl-resources.js",
+    "load:test": "node scripts/load-test.js",
     "test:ui": "node scripts/run-electron-smoke.js",
     "test:installer": "node scripts/test-installer.cjs",
     "test:contract": "python3 scripts/test-laravel-contract.py",

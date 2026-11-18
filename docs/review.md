@@ -319,3 +319,24 @@ time, real journal stage transitions in both languages, Escape handling, footer
 visibility, final status refresh and error cleanup/focus/scroll. Review screenshots
 are generated at artifacts/review/progress-en.png and progress-bg.png. Native Windows
 rendering and the actual installation timing still require Windows acceptance tests.
+
+
+## WSL resource/load acceptance tooling — 2026-11-18
+
+Source-only `resources:wsl` previews global 2 GB RAM / 2 CPU / 1 GB disk swap limits.
+Applying requires --apply --confirm-global, retains unrelated INI values/comments
+and UTF-8/UTF-16LE encoding, backs up exact prior bytes and never shuts down WSL.
+It is not an automatic manager install step and does not claim per-distro isolation.
+
+The dependency-free external Node load generator supplies paused visitors, a single
+burst and sustained concurrent GET modes, bounded to 200 clients. It keeps independent
+in-memory cookie jars, does not submit accounts/game actions, follow redirects or
+weaken TLS checks, and records per-route timings, failures and request rates without
+response bodies or cookies. Public forms are not authenticated business transactions.
+
+All 64 Node and 64 Python tests pass. Local HTTP fixtures verify a 200-request burst,
+429 accounting, separate visitor sessions, no redirect following, timeout and interruption
+handling; temporary file fixtures verify INI preservation and exact backup/stale-preview
+behavior. No installed website, Windows WSL configuration or remote SQL was touched.
+The actual Windows limit activation and application capacity remain VM acceptance work;
+see performance.md for remote SQL observation and comparable 2 GB/4 GB runs.
