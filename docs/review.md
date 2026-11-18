@@ -340,3 +340,22 @@ handling; temporary file fixtures verify INI preservation and exact backup/stale
 behavior. No installed website, Windows WSL configuration or remote SQL was touched.
 The actual Windows limit activation and application capacity remain VM acceptance work;
 see performance.md for remote SQL observation and comparable 2 GB/4 GB runs.
+
+
+## Clean Windows WSL reboot boundary — 2026-11-18
+
+A real clean Windows VM log showed WSL feature installation returning exit 0 while
+printing that a reboot was required. The manager trusted the exit code, then failed
+on empty distro inventory instead of presenting the reboot checkpoint.
+
+Machine preparation now uses a packaged elevated PowerShell script that reads actual
+Windows optional-feature states, enables missing features with NoRestart, and returns
+3010 for newly enabled/pending features independently of WSL's success code. The
+original user's non-elevated session still owns distro installation. After successful
+machine preparation, an empty inventory is not queried again: it proceeds directly
+to installing the fixed Ubuntu distro. No automatic Windows/WSL restart was added.
+
+129 tests pass on Linux, including the empty-inventory/resume regression. Five added
+PowerShell contracts run only on Windows CI, mock all feature/WSL commands and never
+change Windows features. They have not run locally. Actual UAC, feature activation,
+reboot and resume still require the user's clean Windows VM check with a new build.

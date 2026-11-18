@@ -29,6 +29,10 @@ Ready installations are not installed again. Recovery-required migration/access
 phases are never bypassed. Public form fields and the Linux username survive panel
 restart; temporary SQL/bootstrap administrator passwords do not and must be re-entered.
 There is no automatic resume on application startup or automatic reboot.
+Machine feature setup checks actual Windows optional-feature state: newly enabled or
+pending features save a restartRequired checkpoint even if wsl.exe reports exit 0.
+Restart Windows, then click Install/Resume. An empty distro inventory after machine
+preparation proceeds to Ubuntu installation; it does not require manual distro setup.
 Resume repairs ownership of the manager-created Laravel storage directories before
 starting the non-root bootstrap container. Earlier installs left storage parent
 directories root-owned, causing the entrypoint's chmod to fail before any SQL work.

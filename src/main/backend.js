@@ -162,7 +162,9 @@ export class Backend {
       } catch (error) {
         if (this.profile.development) throw error;
         await this.setup.run('windows', async () => {
-          const script = "$ErrorActionPreference='Stop'; $p=Start-Process -FilePath wsl.exe -ArgumentList '--install','--no-distribution' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; if($p.ExitCode -notin @(0,3010,1641)){exit $p.ExitCode}; @{restartRequired=($p.ExitCode -in @(3010,1641))}|ConvertTo-Json -Compress";
+          const preparation = (await readFile(path.join(this.resources, 'runtime', 'setup-windows-wsl.ps1'), 'utf8')).replaceAll('\r\n', '\n');
+          const encoded = Buffer.from(preparation, 'utf16le').toString('base64');
+          const script = "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; $p=Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','" + encoded + "' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; if($p.ExitCode -notin @(0,3010,1641)){exit $p.ExitCode}; @{restartRequired=($p.ExitCode -in @(3010,1641))}|ConvertTo-Json -Compress";
           const result = JSON.parse((await this.runner('powershell.exe', encodedPowerShell(script), '', 900000)).trim());
           if (result.restartRequired) {
             const restart = new Error('Restart Windows, then click Install again to continue. Installation progress has been saved.');
@@ -170,7 +172,9 @@ export class Backend {
             throw restart;
           }
         });
-        distributions = await this.runner('wsl.exe', ['--list', '--quiet'], '', 30000);
+        // Empty WSL inventory can itself exit nonzero. Once machine features are ready,
+        // install the fixed distro directly instead of repeating the failed empty listing.
+        distributions = '';
       }
       const exists = distributions.replaceAll('\u0000', '').split(/\r?\n/).some(line => line.trim() === this.profile.distribution);
       if (!exists) {

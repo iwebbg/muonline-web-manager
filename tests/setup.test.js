@@ -118,3 +118,30 @@ test('Windows reboot and Linux restart boundaries are journaled without shutting
     assert.equal((await journal.read()).linuxUser, undefined);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test('empty WSL inventory after reboot proceeds directly to Ubuntu instead of failing the second listing', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-empty-wsl-'));
+  const calls = [];
+  let distro = false;
+  const backend = new Backend(process.cwd(), directory, undefined, 'en', productionProfile, async (file, args) => {
+    calls.push({ file, args });
+    if (file === 'powershell.exe') {
+      const source = Buffer.from(args.at(-1), 'base64').toString('utf16le');
+      assert.match(source, /Start-Process -FilePath powershell.exe/);
+      assert.match(source, /-Verb RunAs/);
+      assert.doesNotMatch(source, /--shutdown/);
+      return JSON.stringify({ restartRequired: false });
+    }
+    if (args.includes('--quiet')) throw new Error('No installed distributions (exit 4294967295).');
+    if (args.includes('--install')) { distro = true; return ''; }
+    if (args.includes('--verbose')) return distro ? 'Ubuntu-24.04 Stopped 2' : '';
+    throw new Error('Unexpected WSL operation');
+  });
+  backend.requireWindows = () => {};
+  try {
+    await backend.ensureDistribution();
+    assert.equal(calls.filter(call => call.args.includes('--quiet')).length, 1);
+    assert.ok(calls.some(call => JSON.stringify(call.args) === JSON.stringify(['--install', '-d', 'Ubuntu-24.04', '--no-launch'])));
+    assert.equal((await backend.setup.read()).status, 'complete');
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
