@@ -221,3 +221,19 @@ test('a failed localhost probe in NAT is not mislabeled as a firewall failure fo
   const report = buildSqlReport(facts, network, validateSqlInput({ instance: 'SQLEXPRESS', host: '172.30.176.1' }));
   assert.equal(report.steps.find(step => step.id === 'windows.firewall').reason, 'firewallInspected');
 });
+
+test('SQL host suggestion requires measured gateway, reachable TCP and a matching Windows SQL PID', async () => {
+  const { sql } = coordinator();
+  sql.wsl = async (input, addresses, networkOnly) => {
+    assert.equal(networkOnly, true);
+    assert.deepEqual(Object.keys(input).sort(), ['host', 'port']);
+    return { ...structuredClone(wsl), probes: [{ host: '172.30.176.1', port: 1433, ok: true }] };
+  };
+  assert.deepEqual(await sql.suggest(1433, '127.0.0.1'), { suggestion: { host: '172.30.176.1', port: 1433, instance: 'SQLEXPRESS' } });
+  assert.deepEqual(await sql.suggest(1433, 'remote-sql.example'), { suggestion: null });
+  sql.windows = async () => ({ ...structuredClone(windows), listeners: [{ address: '0.0.0.0', port: 1433, pid: 99 }] });
+  assert.deepEqual(await sql.suggest(), { suggestion: null });
+  sql.windows = async () => structuredClone(windows);
+  sql.wsl = async () => ({ ...structuredClone(wsl), probes: [{ host: '172.30.176.1', port: 1433, ok: false }] });
+  assert.deepEqual(await sql.suggest(), { suggestion: null });
+});

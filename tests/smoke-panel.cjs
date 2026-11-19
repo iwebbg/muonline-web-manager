@@ -24,6 +24,8 @@ let heldAction = null;
 let releaseHeld = null;
 let heldSetupStage = null;
 let heldError = null;
+let bootstrapMode = null;
+let savedBootstrapEndpoint = { host: '127.0.0.1', port: 1433, gameHost: '127.0.0.1', gamePort: 1433 };
 let refuseUninstall = true;
 const timer = setTimeout(() => { console.error('Electron smoke test timed out.'); app.exit(1); }, 60000);
 
@@ -59,6 +61,21 @@ async function smoke() {
       });
     }
     if (action === 'setupStatus' && heldSetupStage) return { ok: true, result: { schema: 1, stage: heldSetupStage, status: 'running', completed: [] } };
+    if (action === 'sqlSuggest') return { ok: true, result: { suggestion: { host: '172.20.48.1', port: 1433, instance: 'SQLEXPRESS' } } };
+    if (action === 'resumeInstall' && bootstrapMode) {
+      if (bootstrapMode === 'first') {
+        runtimePhase = 'bootstrap-pending';
+        return { ok: false, error: 'SQL connection failed.', bootstrapSqlEndpoint: savedBootstrapEndpoint,
+          sqlSuggestion: { host: '172.20.48.1', port: 1433, instance: 'SQLEXPRESS' } };
+      }
+      assert.equal(input.settings.sqlHost, '172.20.48.1');
+      assert.equal(input.settings.sqlAdmin, 'Correct-SQL-Admin');
+      assert.equal(input.settings.sqlPassword, 'Correct-SQL-Private-Password');
+      assert.deepEqual(input.settings.sqlEndpointChange, { confirmed: true, expected: savedBootstrapEndpoint });
+      runtimePhase = 'ready';
+      bootstrapMode = null;
+      return { ok: true, result: 'Installation complete.' };
+    }
     if (action === 'setLanguage') {
       language = input.language;
     }
@@ -98,7 +115,7 @@ async function smoke() {
       sqlCopyPlan: { copied: true },
       settings: { distribution: 'MuOnline-Dev', setup: { schema: 1, distribution: 'MuOnline-Dev', linuxUser: 'muonline', stage: 'ready', status: 'complete', completed: [], configuration: {} }, cdn: 'https://cdn.interweb.bg', webChannel: 'muonline-web/releases/v1.3.0', managerChannel: 'muonline-web/manager/stable', trustedKeys: [], language },
       updates: { web: pending ? { latestVersion: '1.5.0', newTag: true, installedVersion, installationKnown: true, error: 'Release is not ready.', ready: false, available: false } : { version: '1.4.0', latestVersion: '1.4.0', installedVersion, installationKnown: true, ready: true, available: installedVersion !== '1.4.0', profiles: ['registry_profile', 'darksteam_97d99i', 'darksteam_1_0m', 'muemu_season_6', 'mudevs_season_21'] }, manager: { error: 'Not published' } },
-      status: { uninstallTarget: { host: 'sql.example', port: 1433, database: 'MuOnline_Web', login: 'web_app' }, gameWrites: runtimeWrites, installed: runtimeInstalled, phase: runtimePhase, version: installedVersion, access: runtimeAccess, services:JSON.stringify([{Service:'app',State:runtimeServiceState}]) }
+      status: { bootstrapSqlEndpoint: runtimePhase === 'bootstrap-pending' ? savedBootstrapEndpoint : null, uninstallTarget: { host: 'sql.example', port: 1433, database: 'MuOnline_Web', login: 'web_app' }, gameWrites: runtimeWrites, installed: runtimeInstalled, phase: runtimePhase, version: installedVersion, access: runtimeAccess, services:JSON.stringify([{Service:'app',State:runtimeServiceState}]) }
     };
     return { ok: true, result: results[action] ?? 'Completed test operation' };
   });
@@ -375,6 +392,23 @@ async function smoke() {
   assert.equal(runtimeWrites, 'enabled');
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#gameWritesToggle').checked`), true);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#gameWritesConfirm').checked`), false);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-page="install"]').click()`);
+  bootstrapMode = 'first';
+  await window.webContents.executeJavaScript(`(()=>{const form=document.querySelector('#installForm'); for(const [key,value] of Object.entries({sqlHost:'127.0.0.1',sqlPort:'1433',sqlAdmin:'Wrong-SQL-Admin',sqlPassword:'Wrong-SQL-Password',adminName:'Owner',adminEmail:'owner@example.test',adminPassword:'AdminPrivate123!'})){form.elements[key].value=value;} document.querySelector('#resumeInstall').click();})();`);
+  await idle();
+  assert.match(await window.webContents.executeJavaScript(`document.querySelector('#output').textContent`), /172\.20\.48\.1:1433/);
+  assert.match(await window.webContents.executeJavaScript(`document.querySelector('#savedSqlEndpoint').textContent`), /127\.0\.0\.1/);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="sqlPassword"]').value`), '');
+  await window.webContents.executeJavaScript(`(()=>{document.querySelector('#useSqlHost').click(); const form=document.querySelector('#installForm'); form.elements.sqlAdmin.value='Correct-SQL-Admin'; form.elements.sqlPassword.value='Correct-SQL-Private-Password'; form.elements.adminPassword.value='AdminPrivate123!';})();`);
+  const resumesBefore = operations.filter(op => op.action === 'resumeInstall').length;
+  await window.webContents.executeJavaScript(`document.querySelector('#resumeInstall').click()`);
+  assert.equal(operations.filter(op => op.action === 'resumeInstall').length, resumesBefore, 'Endpoint retargeting needs explicit same-server confirmation');
+  bootstrapMode = 'corrected';
+  await window.webContents.executeJavaScript(`(()=>{const checkbox=document.querySelector('[name="confirmSqlEndpoint"]'); checkbox.checked=true; checkbox.dispatchEvent(new Event('change')); document.querySelector('#resumeInstall').click();})();`);
+  await idle();
+  assert.equal(operations.filter(op => op.action === 'resumeInstall').length, resumesBefore + 1);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="sqlPassword"]').value`), '');
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#sqlEndpointConfirmation').hidden`), true);
   await window.webContents.executeJavaScript(`document.querySelector('[data-page="install"]').click(); document.querySelector('.uninstall-panel').open=true; document.querySelector('#uninstallName').value='Personal-Linux'; document.querySelector('#uninstallConfirm').checked=true; document.querySelector('#uninstallForm').dispatchEvent(new Event('input'));`);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').disabled`), true);
   await window.webContents.executeJavaScript(`document.querySelector('#uninstallName').value='MuOnline-Dev'; document.querySelector('#uninstallForm').dispatchEvent(new Event('input'));`);

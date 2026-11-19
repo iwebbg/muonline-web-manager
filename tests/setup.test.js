@@ -201,3 +201,36 @@ test('automatic WSL installer failures report bounded reasons and never advance 
     }
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test('bootstrap failures retain the original error and suggest only a different measured endpoint', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-sql-resume-'));
+  const endpoint = { host: '127.0.0.1', port: 1433, gameHost: '127.0.0.1', gamePort: 1433 };
+  try {
+    for (const mode of ['different', 'same', 'unavailable']) {
+      const backend = new Backend(process.cwd(), directory);
+      backend.ensureEnvironment = async () => {};
+      backend.requireWindows = () => {};
+      const failure = new Error('SQL bootstrap failed');
+      backend.runtime = async request => {
+        if (request.action === 'status') return { installed: true, phase: 'bootstrap-pending', bootstrapSqlEndpoint: endpoint };
+        assert.equal(request.action, 'resumeInstall');
+        assert.equal(request.settings.sqlAdmin, 'corrected-admin');
+        assert.equal(request.settings.sqlPassword, 'current-private-password');
+        throw failure;
+      };
+      backend.sql.suggest = async (port, host) => {
+        assert.equal(port, 1433);
+        assert.equal(host, endpoint.host);
+        if (mode === 'unavailable') throw new Error('optional discovery unavailable');
+        return { suggestion: { host: mode === 'same' ? endpoint.host : '172.20.48.1', port } };
+      };
+      await assert.rejects(backend.install({ settings: { sqlAdmin: 'corrected-admin', sqlPassword: 'current-private-password' } }), error => {
+        assert.equal(error, failure);
+        assert.deepEqual(error.bootstrapSqlEndpoint, endpoint);
+        assert.equal(error.sqlSuggestion?.host, mode === 'different' ? '172.20.48.1' : undefined);
+        return true;
+      });
+      assert.doesNotMatch(await readFile(path.join(directory, 'installation.json'), 'utf8'), /corrected-admin|current-private-password/);
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});

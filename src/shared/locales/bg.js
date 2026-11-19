@@ -1,5 +1,13 @@
 /** Application-owned interface strings. Runtime identifiers and logs remain unchanged. */
 export default {
+  "sqlSetup.detect": "Открий локален SQL Server",
+  "sqlSetup.use": "Използвай предложения адрес",
+  "sqlSetup.hint": "При SQL Server на този Windows компютър localhost сочи вътре в web контейнера. След подготовка на средата открий достъпен локален SQL адрес или въведи адреса на отдалечения SQL Server.",
+  "sqlSetup.suggest": "Достъпен Windows SQL Server: {host}:{port}. Използвай адреса само ако това е избраният от теб SQL Server.",
+  "sqlSetup.notDetected": "Не е потвърден локален SQL адрес. Подготви средата и провери SQL диагностиката; отдалеченият SQL Server се задава ръчно.",
+  "sqlSetup.saved": "Незавършеният bootstrap използва {host}:{port}. Само редакция във формата не променя запазения адрес.",
+  "sqlSetup.confirm": "Потвърждавам, че новият адрес/порт води до СЪЩИЯ SQL Server instance. Запази съществуващите бази, logins и генерирани пароли.",
+  "sqlSetup.temporary": "Temporary SQL Admin и паролата се използват само за този опит. При повторен опит въведи коригираните credentials; те не се записват. Паролите се изчистват след всеки опит.",
   "progress.action": "Изпълнява се: {action}",
   "progress.hint": "Остави панела отворен. По-дългите операции може да отнемат няколко минути.",
   "progress.waiting": "Изчаква се завършването на операцията…",

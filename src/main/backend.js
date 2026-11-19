@@ -239,17 +239,34 @@ export class Backend {
     const saved = await this.setup.read();
     const request = { settings: { ...saved.configuration, ...input.settings } };
     await this.ensureEnvironment();
-    const result = await this.setup.run('application', async () => {
-      const state = await this.runtime({ action: 'status' });
-      if (state.installed) {
-        if (state.phase === 'ready') return 'Installation is already complete.';
-        if (!['bootstrap-pending', 'runtime-bootstrapped', 'administrator-created'].includes(state.phase)) {
-          throw new Error('Installation requires manual recovery. Consult the recovery guide.');
+    let result;
+    let bootstrapAttempted = false;
+    try {
+      result = await this.setup.run('application', async () => {
+        const state = await this.runtime({ action: 'status' });
+        if (state.installed) {
+          if (state.phase === 'ready') return 'Installation is already complete.';
+          if (!['bootstrap-pending', 'runtime-bootstrapped', 'administrator-created'].includes(state.phase)) {
+            throw new Error('Installation requires manual recovery. Consult the recovery guide.');
+          }
+          bootstrapAttempted = state.phase === 'bootstrap-pending';
+          return this.runtime({ action: 'resumeInstall', settings: request.settings });
         }
-        return this.runtime({ action: 'resumeInstall', settings: request.settings });
-      }
-      return this.deploy('install', request);
-    });
+        bootstrapAttempted = true;
+        return this.deploy('install', request);
+      });
+    } catch (error) {
+      if (bootstrapAttempted) try {
+        const current = await this.runtime({ action: 'status' });
+        if (current.phase === 'bootstrap-pending') error.bootstrapSqlEndpoint = current.bootstrapSqlEndpoint;
+        const endpoint = current.bootstrapSqlEndpoint ?? { host: request.settings.sqlHost, port: request.settings.sqlPort };
+        if (!current.installed || current.phase === 'bootstrap-pending') {
+          const suggestion = (await this.sql.suggest(endpoint.port, endpoint.host)).suggestion;
+          if (suggestion && (suggestion.host !== endpoint.host || suggestion.port !== Number(endpoint.port))) error.sqlSuggestion = suggestion;
+        }
+      } catch { /* Optional discovery must not replace the original installation failure. */ }
+      throw error;
+    }
     await this.setup.run('ready', async () => {
       const state = await this.runtime({ action: 'status' });
       if (!state.installed || state.phase !== 'ready') throw new Error('Installation has not reached the ready phase. Retry Install to continue.');
@@ -438,6 +455,9 @@ export class Backend {
           return await this.websiteUrl();
         case 'openAdmin':
           return await this.websiteUrl(true);
+        case 'sqlSuggest':
+          this.requireWindows();
+          return await this.sql.suggest(input.port, input.configuredHost);
         case 'sqlInspect':
           this.requireWindows();
           return await this.sql.inspect();

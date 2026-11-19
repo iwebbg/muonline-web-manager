@@ -129,7 +129,7 @@ if (!app.requestSingleInstanceLock()) {
             else error.logFile = log.file;
           } catch { error.logUnavailable = true; }
         }
-        return { ok: false, error: error.message.split('\n')[0].slice(0, 350), logFile: error.logFile, logUnavailable: error.logUnavailable === true };
+        return { ok: false, error: error.message.split('\n')[0].slice(0, 350), logFile: error.logFile, logUnavailable: error.logUnavailable === true, sqlSuggestion: error.sqlSuggestion ?? null, bootstrapSqlEndpoint: error.bootstrapSqlEndpoint ?? null };
       }
     });
     ipcMain.handle('manager:link', async (event, target) => {

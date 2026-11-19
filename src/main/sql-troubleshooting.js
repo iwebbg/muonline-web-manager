@@ -83,6 +83,28 @@ export class SqlTroubleshooter {
     return { instances: windows.instances ?? [], selectedInstance: selected?.name ?? '', addresses: windows.addresses ?? [] };
   }
 
+  /** Suggest only a reachable Windows SQL listener on the measured private WSL NAT gateway. */
+  async suggest(port = 1433, configuredHost = '') {
+    port = Number(port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid SQL port.');
+    try {
+      const windows = await this.windows('', [], port);
+      if (configuredHost && !['localhost', '::1'].includes(configuredHost.toLowerCase())
+          && !/^127\./.test(configuredHost) && !(windows.addresses ?? []).some(item => item.address === configuredHost)) {
+        return { suggestion: null };
+      }
+      const wsl = await this.wsl({ host: '', port }, (windows.addresses ?? []).filter(item => !item.virtual).map(item => item.address), true);
+      const scope = firewallScope(windows, wsl, port);
+      if (!(wsl.probes ?? []).some(item => item.host === scope.localAddress && item.port === port && item.ok === true)) return { suggestion: null };
+      const matches = (windows.instances ?? []).filter(instance => instance.state === 'Running' && instance.tcp?.enabled === true
+        && Number.isInteger(instance.pid) && instance.pid > 0
+        && (windows.listeners ?? []).some(listener => listener.pid === instance.pid && listener.port === port
+          && ['0.0.0.0', '::', scope.localAddress].includes(listener.address)));
+      if (matches.length !== 1) return { suggestion: null };
+      return { suggestion: { host: scope.localAddress, port, instance: matches[0].name } };
+    } catch { return { suggestion: null }; }
+  }
+
   /** Run independent Windows, WSL and real-container-network checks and return safe facts. */
   async diagnose(input) {
     const target = validateSqlInput(input);

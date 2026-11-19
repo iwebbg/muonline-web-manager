@@ -159,3 +159,21 @@ available to the VM. Do not use live game databases for mutation/restart tests.
 - [SQL Server Browser](https://learn.microsoft.com/en-us/sql/tools/configuration-manager/sql-server-browser-service?view=sql-server-ver16)
 - [New-NetFirewallRule](https://learn.microsoft.com/en-us/powershell/module/netsecurity/new-netfirewallrule?view=windowsserver2025-ps),
   [Get-NetFirewallPortFilter](https://learn.microsoft.com/en-us/powershell/module/netsecurity/get-netfirewallportfilter?view=windowsserver2025-ps)
+
+### Installation endpoint suggestion
+
+The first-install form offers local SQL address discovery. It suggests the measured
+Windows WSL gateway only when its subnet matches a Windows virtual adapter, WSL TCP
+reaches the requested port, and exactly one running SQL instance owns a matching
+Windows listener. Discovery carries no SQL credentials and never builds or pulls an
+image. Missing or ambiguous evidence produces no suggestion. TCP success does not
+prove authentication or database access.
+
+Blank/container-loopback input can be filled on a fresh installation after clicking
+discovery. An existing pending installation requires choosing the suggestion and
+confirming the same SQL instance before Resume changes configuration. Bootstrap
+failures also show a measured alternative when the saved address is loopback or a
+local Windows adapter; remote SQL endpoints are never silently redirected. The IP
+is discovered at runtime, not hardcoded. See [recovery](recovery.md) for backups and
+interruption boundaries. Correct temporary SQL credentials must be entered again
+for each attempt; they are never persisted in the installation journal or state.

@@ -39,3 +39,5 @@ body.operation-loading{overflow:hidden}
 @keyframes operationSpin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.progress-spinner,.progress-dot{animation:none}}
 @media(max-width:600px){.operation-progress{padding:18px}.progress-card{padding:24px}}
+
+#sqlEndpointConfirmation[hidden]{display:none}

@@ -2,6 +2,13 @@ import { resolveLocale, translate } from './i18n.js';
 
 /** Known application messages only. Arbitrary logs and SQL diagnostics are not translated. */
 const bulgarian = {
+  "SQL host points to the web container. Use the Windows SQL Server address.": "SQL адресът сочи към web контейнера. Използвай адреса на Windows SQL Server.",
+  "Resume cannot change databases, logins or game profile. Restore the original installation fields.": "Продължаването не може да променя бази, logins или game профил. Възстанови първоначалните стойности на тези полета.",
+  "SQL endpoint correction is allowed only before bootstrap completes.": "SQL адресът може да се коригира само преди bootstrap-ът да завърши.",
+  "Confirm that the new endpoint belongs to the same SQL Server instance before retrying bootstrap.": "Потвърди, че новият адрес води до същия SQL Server instance, преди повторния bootstrap опит.",
+  "Separate SQL endpoints require manual configuration recovery.": "Различните SQL адреси за web и game изискват ръчно възстановяване на конфигурацията.",
+  "The new SQL endpoint is not reachable from Docker. Saved configuration was not changed.": "Новият SQL адрес е недостъпен от Docker. Запазената конфигурация не е променена.",
+  "SQL endpoint change failed; previous configuration restored.": "Промяната на SQL адреса е неуспешна; предишната конфигурация е възстановена.",
   "Windows needs updating before the current WSL runtime can be installed. Update Windows, then click Install again. Existing distributions were retained.": "Преди инсталирането на актуалния WSL runtime е нужно обновяване на Windows. Обнови Windows и натисни Инсталирай отново. Съществуващите дистрибуции са запазени.",
   "The official WSL installer could not be downloaded. Check internet access and retry Install. Existing distributions were retained.": "Официалният WSL инсталатор не може да бъде изтеглен. Провери интернет връзката и опитай Инсталирай отново. Съществуващите дистрибуции са запазени.",
   "WSL installer verification failed. The package was not executed. Retry Install after checking Windows updates and network access.": "Проверката на WSL инсталатора е неуспешна. Пакетът не е стартиран. Провери обновяванията на Windows и мрежовия достъп, после опитай отново.",
@@ -145,6 +152,7 @@ const bulgarian = {
 };
 
 const prefixes = [
+  ['SQL endpoint configuration recovery failed. Restore the private backup: ', 'Възстановяването на SQL конфигурацията е неуспешно. Възстанови частния архив: '],
   ['Cannot start required executable: ', 'Нужната програма не може да бъде стартирана: '],
   ['Incomplete runtime release: ', 'Непълен runtime release: '],
   ['Access configuration applied: ', 'Конфигурацията за достъп е приложена: '],

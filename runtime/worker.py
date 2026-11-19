@@ -697,6 +697,91 @@ def manage_administrators(operation, details=None, secrets_to_hide=()):
         return {'code': 'releaseRequired' if missing else 'invalidResponse'}
 
 
+def sql_endpoint(host, port):
+    """Validate a SQL endpoint and reject container loopback addresses before bootstrap."""
+    host = single_line(host)
+    require(re.fullmatch(r'[a-zA-Z0-9_.:-]+', host), 'Invalid SQL host.')
+    port = int(port)
+    require(1 <= port <= 65535, 'Invalid SQL port.')
+    loopback = host.lower() == 'localhost'
+    with contextlib.suppress(ValueError):
+        loopback = ipaddress.ip_address(host).is_loopback
+    require(not loopback, 'SQL host points to the web container. Use the Windows SQL Server address.')
+    return host, port
+
+
+def bootstrap_sql_endpoint(state):
+    """Expose only the saved host/port pair for explicitly confirmed pending-bootstrap repair."""
+    environment = state['environment']
+    return {'host': environment['DB_HOST'], 'port': int(environment['DB_PORT']),
+            'gameHost': environment.get('GAME_DB_HOST', environment['DB_HOST']),
+            'gamePort': int(environment.get('GAME_DB_PORT', environment['DB_PORT']))}
+
+
+SQL_ENDPOINT_PROBE = r'''
+$input = json_decode(stream_get_contents(STDIN), true, 16, JSON_THROW_ON_ERROR);
+$host = str_contains($input["host"], ":") ? "[".$input["host"]."]" : $input["host"];
+$socket = @stream_socket_client("tcp://".$host.":".$input["port"], $code, $message, 5);
+if ($socket === false) { exit(1); }
+fclose($socket);
+echo "TCP OK";
+'''
+
+
+def repair_bootstrap_endpoint(state, settings):
+    """Change only a confirmed same-server endpoint while bootstrap is pending.
+
+    SQL effects from an earlier attempt may already exist. Database/login/profile
+    changes are refused, secrets stay stable, and only configuration is recoverable.
+    """
+    for field, key in [('webDatabase', 'DB_DATABASE'), ('gameDatabase', 'GAME_DB_MUONLINE'),
+                       ('appLogin', 'DB_USERNAME'), ('gameLogin', 'GAME_DB_USERNAME'), ('profile', 'GAME_SERVER_PROFILE')]:
+        if field in settings:
+            require(settings[field] == state['environment'].get(key), 'Resume cannot change databases, logins or game profile. Restore the original installation fields.')
+    if 'sqlHost' not in settings or 'sqlPort' not in settings:
+        return
+    current = bootstrap_sql_endpoint(state)
+    # Unchanged endpoints are left alone even if an older install saved loopback.
+    if settings['sqlHost'] == current['host'] and str(settings['sqlPort']) == str(current['port']):
+        return
+    require(state.get('phase', 'bootstrap-pending') == 'bootstrap-pending', 'SQL endpoint correction is allowed only before bootstrap completes.')
+    confirmation = settings.get('sqlEndpointChange', {})
+    require(isinstance(confirmation, dict) and confirmation.get('confirmed') is True
+            and confirmation.get('expected') == current, 'Confirm that the new endpoint belongs to the same SQL Server instance before retrying bootstrap.')
+    require(current['host'] == current['gameHost'] and current['port'] == current['gamePort'], 'Separate SQL endpoints require manual configuration recovery.')
+    host, port = sql_endpoint(settings['sqlHost'], settings['sqlPort'])
+    validate_backup_configuration(state)
+    result = compose('run', '--rm', '--no-deps', '-T', '--entrypoint', 'php', 'app', '-r', SQL_ENDPOINT_PROBE,
+                     data=json.dumps({'host': host, 'port': port}), allow_failure=True, return_process=True)
+    require(result.returncode == 0, 'The new SQL endpoint is not reachable from Docker. Saved configuration was not changed.')
+    backup = ROOT / 'backups' / ('bootstrap-endpoint-' + secrets.token_hex(8))
+    backup.mkdir(parents=True, mode=0o700)
+    for source in (STATE, COMPOSE, APP / '.env', ROOT / 'nginx.conf'):
+        if source.exists():
+            shutil.copy2(source, backup / source.name)
+    previous = json.loads(json.dumps(state))
+    values = {'DB_HOST': host, 'DB_PORT': str(port), 'GAME_DB_HOST': host, 'GAME_DB_PORT': str(port)}
+    try:
+        save_state(dict(previous, phase='bootstrap-endpoint-changing', backup=str(backup)))
+        content = (APP / '.env').read_bytes().decode('utf-8')
+        atomic(APP / '.env', update_access_environment(content, values))
+        updated = json.loads(json.dumps(previous))
+        updated['environment'].update(values)
+        updated['phase'] = 'bootstrap-pending'
+        updated['bootstrapEndpointBackup'] = str(backup)
+        write_configuration(updated, preserve_environment=True)
+        save_state(updated)
+        state.clear()
+        state.update(updated)
+    except Exception:
+        try:
+            restore_access_configuration(backup)
+        except Exception:
+            save_state(dict(previous, phase='bootstrap-endpoint-recovery-required', backup=str(backup)))
+            raise RuntimeError('SQL endpoint configuration recovery failed. Restore the private backup: ' + str(backup)) from None
+        raise RuntimeError('SQL endpoint change failed; previous configuration restored.') from None
+
+
 def install(request):
     """Provision restricted SQL identities using the existing Laravel entrypoint bootstrap."""
     require(not STATE.exists() and not APP.exists(), 'Existing installation detected. Use recovery or update instead.')
@@ -707,10 +792,7 @@ def install(request):
     game_login = identifier(values['gameLogin'])
     admin_login = single_line(values['sqlAdmin'])
     require(len({app_login.lower(), game_login.lower(), admin_login.lower()}) == 3 and game.lower() != web.lower(), 'SQL databases and runtime identities must be distinct.')
-    host = single_line(values['sqlHost'])
-    require(re.fullmatch(r'[a-zA-Z0-9_.:-]+', host), 'Invalid SQL host.')
-    port = int(values['sqlPort'])
-    require(1 <= port <= 65535, 'Invalid SQL port.')
+    host, port = sql_endpoint(values['sqlHost'], values['sqlPort'])
     require(values['appEnv'] in ('local', 'production'), 'Invalid APP_ENV.')
     require(values['profile'] in request['release']['profiles'], 'Choose a profile from the release registry.')
     state = {'version': request['release']['version'], 'access': access_settings(values['access']), 'environment': {}}
@@ -770,6 +852,7 @@ def finish_install(state, credentials):
     phase = state.get('phase', 'bootstrap-pending')
     require(phase in ('bootstrap-pending', 'runtime-bootstrapped', 'administrator-created'), 'Only incomplete first installations can be resumed.')
     state['phase'] = phase
+    repair_bootstrap_endpoint(state, credentials)
     write_configuration(state)
     compose('build', 'app')
     compose('up', '-d', '--wait', 'redis')
@@ -1090,7 +1173,7 @@ def dispatch(request):
         except RuntimeError as exception:
             services = '[]'
             error = str(exception)
-        return {'installed': True, 'version': state['version'], 'phase': state.get('phase'), 'access': state['access'], 'gameWrites': game_write_mode(), 'services': services, 'runtimeError': error, 'uninstallTarget': uninstall_target(state)}
+        return {'installed': True, 'version': state['version'], 'phase': state.get('phase'), 'access': state['access'], 'gameWrites': game_write_mode(), 'services': services, 'runtimeError': error, 'uninstallTarget': uninstall_target(state), 'bootstrapSqlEndpoint': bootstrap_sql_endpoint(state) if state.get('phase') == 'bootstrap-pending' else None}
     state = load_state()
     if action == 'setGameWrites':
         return apply_game_writes(state, request.get('gameWrites'))

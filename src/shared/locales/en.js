@@ -1,5 +1,13 @@
 /** Application-owned interface strings. Runtime identifiers and logs remain unchanged. */
 export default {
+  "sqlSetup.detect": "Detect local SQL Server",
+  "sqlSetup.use": "Use suggested address",
+  "sqlSetup.hint": "For SQL Server on this Windows computer, localhost points inside the web container. Detect a reachable local SQL address after the environment is prepared, or enter your remote SQL Server address.",
+  "sqlSetup.suggest": "Reachable Windows SQL Server: {host}:{port}. Use this address only if it is your intended SQL Server.",
+  "sqlSetup.notDetected": "No local SQL endpoint could be verified. Prepare the environment and check SQL Troubleshooting; remote SQL hosts remain a manual choice.",
+  "sqlSetup.saved": "Pending bootstrap currently uses {host}:{port}. A form edit alone does not change the saved endpoint.",
+  "sqlSetup.confirm": "I confirm that the new address/port reaches the SAME SQL Server instance. Keep the existing databases, logins and generated passwords.",
+  "sqlSetup.temporary": "Temporary SQL Admin and password are used only for this attempt. Enter corrected credentials on retry; they are never saved. Passwords are cleared after each attempt.",
   "progress.action": "Working: {action}",
   "progress.hint": "Please keep the panel open. Longer operations may take several minutes.",
   "progress.waiting": "Waiting for the operation to complete…",

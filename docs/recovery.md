@@ -69,9 +69,24 @@ file. The manager may terminate only its selected distro to activate systemd.
 Status reports `bootstrap-pending`, `runtime-bootstrapped` or `administrator-created`
 until installation succeeds. The first-install form's **Продължи прекъсната инсталация**
 button resumes from this phase. Re-enter temporary SQL authorization when bootstrap
-is still pending; other SQL settings and generated runtime passwords come from the
-saved private state. Re-enter administrator details only if the phase has not passed
+is still pending. Each attempt uses the currently entered temporary SQL username and
+password; neither is restored from a previous attempt. The password field is cleared
+after the operation. Other SQL settings and generated runtime passwords come from
+the saved private state. Re-enter administrator details only if the phase has not passed
 that step. Resume does not rotate APP_KEY or regenerate runtime SQL passwords.
+
+While `bootstrap-pending`, the form displays the saved SQL endpoint. Correcting a
+host/port requires explicit confirmation that the new address reaches the **same
+SQL Server instance**. A Docker TCP probe must succeed before saving. The worker
+backs up state, Compose, `.env` and nginx configuration privately, then updates both
+state and `.env`. Database names, restricted logins, profile, generated passwords
+and APP_KEY remain unchanged. This is endpoint repair, not a database/server move;
+SQL effects from a previous partial attempt may already exist.
+
+Ordinary configuration failures restore the exact backup. An interruption during
+`bootstrap-endpoint-changing`, or `bootstrap-endpoint-recovery-required` after failed
+restoration, blocks normal Start/Resume: inspect and restore the private backup
+before proceeding. There is no automatic rollback of SQL provisioning or migrations.
 
 If ACME fails after administrator creation, fix DNS/firewall/port reachability and
 resume. The phase prevents creating the same administrator a second time. A forced

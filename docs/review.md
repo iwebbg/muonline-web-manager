@@ -403,3 +403,18 @@ unverified on this Linux workstation and require the clean Windows VM acceptance
 Final verification for this change: 132 local Node/Python tests passed and the
 Electron EN/BG smoke test passed. The 19 PowerShell contracts are Windows-only and
 were skipped on Linux; their pass status is not inferred from the other tests.
+
+## SQL bootstrap endpoint recovery — 2026-11-19
+
+`npm test` passed: 70 Node tests and 72 Python tests; 19 Windows-only tests skipped
+on Linux. New checks cover measured local SQL suggestions, original bootstrap error
+preservation, current-attempt temporary admin credentials, exact configuration backup
+and restore, stale confirmation refusal and stable runtime passwords/APP_KEY.
+
+`npm run test:ui` passed on Linux with isolated IPC: a saved loopback failure shows
+the measured alternative, selecting it requires same-instance confirmation, Resume
+receives corrected temporary SQL username/password, and password fields clear after
+the attempt. All eight pages remain translated in EN/BG with the donate footer.
+These checks do not verify Windows networking, live SQL provisioning or the NSIS
+build. Retest the new Windows build against the VM's actual WSL gateway and SQL
+instance; no migration/provisioning rollback is promised.
