@@ -22,7 +22,7 @@
     </nav>
     <p class="aside-note">© <span id="copyrightYear"></span> <a href="https://interweb.bg">InterWeb Ltd</a></p>
   </aside>
-  <main>
+  <main aria-busy="true">
     <header><div class="header-tools"><label class="language-picker"><span data-i18n="language">Language</span><select id="language" aria-label="Language"><option value="en">English</option><option value="bg">Български</option></select></label><span class="badge" id="activity">Ready</span></div></header>
     <button id="updateNotice" type="button" class="update-notice" hidden></button>
     <p id="devNotice" class="warning" hidden></p>
@@ -37,7 +37,17 @@
       <h1 id="progressTitle"></h1>
       <p id="progressHint" class="hint"></p>
       <div class="progress-current" role="status" aria-live="polite" aria-atomic="true"><span class="progress-dot" aria-hidden="true"></span><span id="progressStep"></span></div>
+      <p id="installationEstimate" class="hint" hidden></p>
       <p id="progressElapsed" class="hint"></p>
+    </div>
+  </dialog>
+  <dialog id="installationOutcome" class="operation-progress installation-outcome" aria-labelledby="outcomeTitle" aria-describedby="outcomeDescription">
+    <div class="progress-card outcome-card">
+      <button type="button" id="outcomeClose" class="outcome-close" data-close-outcome aria-label="Close">×</button>
+      <div id="outcomeIcon" class="outcome-icon" aria-hidden="true"></div>
+      <h1 id="outcomeTitle"></h1>
+      <p id="outcomeDescription"></p>
+      <button type="button" id="outcomeContinue" class="primary" data-close-outcome></button>
     </div>
   </dialog>
   <script type="module" src="app.js"></script>

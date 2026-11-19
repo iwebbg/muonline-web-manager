@@ -148,6 +148,10 @@ try {
         $script:preparationStage = 'wsl-help'
         $helpText = (Invoke-WslSetupCommand -Arguments @('--help')).Text
         $missingFlags = @($requiredFlags | Where-Object { $helpText -notmatch [regex]::Escape($_) })
+        if ($updateCode -eq 0 -and $missingFlags.Count -eq 0) {
+            $script:preparationStage = 'runtime-activation'
+            Complete-WslPreparation -Code 3010
+        }
     }
     if ($missingFlags.Count -gt 0) {
         # Kernel-only updates and Store failures fall back to Microsoft's signed full runtime.
@@ -155,12 +159,10 @@ try {
         if ($runtimeCode -ne 0) {
             Complete-WslPreparation -Code $runtimeCode
         }
-        $script:preparationStage = 'wsl-help'
-        $helpText = (Invoke-WslSetupCommand -Arguments @('--help')).Text
-        $missingFlags = @($requiredFlags | Where-Object { $helpText -notmatch [regex]::Escape($_) })
-        if ($missingFlags.Count -gt 0) {
-            Complete-WslPreparation -Code 54
-        }
+        # Even a successful MSI exit 0 needs a boot boundary before using the new
+        # runtime. The coordinator records the current boot so Resume cannot skip it.
+        $script:preparationStage = 'runtime-activation'
+        Complete-WslPreparation -Code 3010
     }
 
     # WSL can print "reboot required" and still return zero; check actual feature state as well.

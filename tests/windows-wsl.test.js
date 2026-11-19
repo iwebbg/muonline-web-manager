@@ -103,11 +103,11 @@ for (const [name, settings, expected] of [
   ['already active features permit installation after the actual reboot', { initial: 'Enabled' }, 0],
   ['native reboot exit remains a reboot boundary', { initial: 'Enabled', nativeCode: 3010 }, 3010],
   ['native WSL failure is not treated as readiness', { initial: 'Enabled', nativeCode: 7 }, 7],
-  ['legacy kernel-only update falls back to a verified full runtime MSI', { legacy: true }, 0],
-  ['legacy WSL upgrade rechecks flags before using no-distribution', { legacy: true, upgradeWorks: true }, 0],
-  ['failed WSL update falls back to the verified runtime package', { legacy: true, updateCode: 7 }, 0],
+  ['legacy kernel-only update falls back to a verified full runtime MSI', { legacy: true }, 3010],
+  ['legacy WSL upgrade rechecks flags before using no-distribution', { legacy: true, upgradeWorks: true }, 3010],
+  ['failed WSL update falls back to the verified runtime package', { legacy: true, updateCode: 7 }, 3010],
   ['UTF-16 style null-separated native help still detects flags', { nullHelp: true }, 0],
-  ['legacy Windows 10 uses advertised web download to upgrade the runtime', { legacy: true, upgradeWorks: true, webDownload: true }, 0],
+  ['legacy Windows 10 uses advertised web download to upgrade the runtime', { legacy: true, upgradeWorks: true, webDownload: true }, 3010],
   ['older Windows blocks MSI fallback before downloading', { legacy: true, fallback: 'oldWindows' }, 50],
   ['unavailable official download fails without running an installer', { legacy: true, fallback: 'download' }, 51],
   ['redirected metadata cannot select an arbitrary installer URL', { legacy: true, fallback: 'url' }, 51],
@@ -115,7 +115,7 @@ for (const [name, settings, expected] of [
   ['unsigned installer is refused despite a matching checksum', { legacy: true, fallback: 'signature' }, 52],
   ['valid signature from a different publisher is refused', { legacy: true, fallback: 'publisher' }, 52],
   ['MSI failure does not advance to distro installation', { legacy: true, fallback: 'msi' }, 53],
-  ['MSI success with missing modern commands reports activation failure', { legacy: true, fallback: 'unchanged' }, 54],
+  ['MSI success requires a reboot before checking newly activated commands', { legacy: true, fallback: 'unchanged' }, 3010],
   ['MSI reboot requirement is returned without rebooting', { legacy: true, fallback: 'reboot' }, 3010]
 ]) {
   test(name, { skip: process.platform !== 'win32' }, async () => {
@@ -125,7 +125,7 @@ for (const [name, settings, expected] of [
 
 
 test('native updater stderr does not bypass the signed MSI fallback on PowerShell 5.1', { skip: process.platform !== 'win32' }, async () => {
-  assert.equal(await featureContract({ legacy: true, updateCode: 7, updateStderr: true }), 0);
+  assert.equal(await featureContract({ legacy: true, updateCode: 7, updateStderr: true }), 3010);
 });
 
 test('elevated setup records the failing stage and bounded error before exiting', { skip: process.platform !== 'win32' }, async () => {

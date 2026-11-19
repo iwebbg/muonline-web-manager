@@ -152,10 +152,29 @@ export class Backend {
     return 'WSL2 and Linux account are ready. No Linux password is required by the manager.';
   }
 
+  /** Measure the actual Windows boot, without trusting manager restart or elapsed time. */
+  async windowsBootIdentity() {
+    const source = "$ErrorActionPreference='Stop'; (Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks.ToString()";
+    const value = (await this.runner('powershell.exe', encodedPowerShell(source), '', 30000)).trim();
+    if (!/^\d{15,20}$/.test(value)) throw new Error('Windows boot identity could not be verified.');
+    return value;
+  }
+
+  restartRequired() {
+    const error = new Error('Restart Windows, then click Install again to continue. Installation progress has been saved.');
+    error.code = 'WSL_RESTART_REQUIRED';
+    return error;
+  }
+
   /** Request machine features only when inventory is unavailable; never change the default distro. */
   async ensureDistribution() {
     this.requireWindows();
     return this.setup.run('distribution', async () => {
+      const checkpoint = await this.setup.read();
+      if (checkpoint.restartBoot) {
+        if (await this.windowsBootIdentity() === checkpoint.restartBoot) throw this.restartRequired();
+        await this.setup.clearRestart();
+      }
       let distributions;
       let needsPreparation = false;
       try {
@@ -235,9 +254,8 @@ exit 0
             throw new Error('Windows WSL preparation failed. Open support logs for the failed setup stage, then retry Install.');
           }
           if (result.restartRequired) {
-            const restart = new Error('Restart Windows, then click Install again to continue. Installation progress has been saved.');
-            restart.code = 'WSL_RESTART_REQUIRED';
-            throw restart;
+            await this.setup.requireRestart(await this.windowsBootIdentity());
+            throw this.restartRequired();
           }
         });
         // Empty WSL inventory can itself exit nonzero. Once machine features are ready,

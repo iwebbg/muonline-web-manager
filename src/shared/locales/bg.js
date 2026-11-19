@@ -1,5 +1,14 @@
 /** Application-owned interface strings. Runtime identifiers and logs remain unchanged. */
 export default {
+  "progress.estimate": "Приблизително време за първа инсталация: около 15 минути.\nЗависи от компютъра и интернет връзката.",
+  "outcome.success.title": "Инсталацията завърши успешно",
+  "outcome.success.description": "Сайтът е готов. Можеш да го отвориш или да управляваш услугите му от Контролния панел.",
+  "outcome.restart.title": "Рестартирай Windows, за да продължиш",
+  "outcome.restart.description": "Подготовката е запазена. Рестартирай компютъра, отвори MuOnline Web Manager и избери Продължи инсталацията. Временните пароли трябва да се въведат отново.",
+  "outcome.controlPanel": "Към Контролния панел",
+  "outcome.understood": "Разбрах",
+  "outcome.close": "Затвори съобщението",
+  "installation.maintenance": "Контролен панел и поддръжка на компонентите",
   "sqlSetup.automaticHint": "За SQL Server на този компютър инсталацията открива адреса и подготвя firewall правило, ограничено до средата на сайта. Потвърди Windows UAC при поискване. Външните/cloud SQL адреси се запазват без промяна.",
   "sqlSetup.detect": "Открий локален SQL Server",
   "sqlSetup.use": "Използвай предложения адрес",

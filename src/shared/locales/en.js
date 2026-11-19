@@ -1,5 +1,14 @@
 /** Application-owned interface strings. Runtime identifiers and logs remain unchanged. */
 export default {
+  "progress.estimate": "Approximate first-install time: about 15 minutes.\nDepends on your computer and internet connection.",
+  "outcome.success.title": "Installation complete",
+  "outcome.success.description": "Your website is ready. You can open it or manage its services from the Control Panel.",
+  "outcome.restart.title": "Restart Windows to continue",
+  "outcome.restart.description": "Windows preparation is saved. Restart your computer, reopen MuOnline Web Manager and select Resume installation. Temporary passwords must be entered again.",
+  "outcome.controlPanel": "Continue to Control Panel",
+  "outcome.understood": "Understood",
+  "outcome.close": "Close message",
+  "installation.maintenance": "Control Panel and component maintenance",
   "sqlSetup.automaticHint": "For SQL Server on this computer, Install detects the local connection address and prepares a firewall rule restricted to the website environment. Approve Windows UAC when requested. Remote/cloud SQL addresses are kept unchanged.",
   "sqlSetup.detect": "Detect local SQL Server",
   "sqlSetup.use": "Use suggested address",

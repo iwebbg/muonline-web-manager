@@ -37,6 +37,7 @@ export class SetupJournal {
       if (error.code === 'ENOENT') return empty;
       throw new Error('Installation progress could not be read. Recover installation.json before continuing.');
     }
+    if (value.restartBoot !== undefined && (typeof value.restartBoot !== 'string' || !/^\d{15,20}$/.test(value.restartBoot))) throw new Error('Installation progress could not be read. Recover installation.json before continuing.');
     if (value.schema !== 1 || value.distribution !== this.distribution) throw new Error('Installation progress belongs to another runtime.');
     return {
       ...empty,
@@ -44,6 +45,7 @@ export class SetupJournal {
       ...(statuses.has(value.status) ? { status: value.status } : {}),
       completed: Array.isArray(value.completed) ? value.completed.filter(stage => stages.has(stage)) : [],
       configuration: publicInstallationSettings(value.configuration),
+      ...(value.restartBoot ? { restartBoot: value.restartBoot } : {}),
       ...(typeof value.linuxUser === 'string' && /^[a-z_][a-z0-9_-]{0,31}$/.test(value.linuxUser) ? { linuxUser: value.linuxUser } : {})
     };
   }
@@ -59,9 +61,21 @@ export class SetupJournal {
     await this.write({ ...state, configuration: { ...state.configuration, ...publicInstallationSettings(input) } });
   }
 
+  /** Persist a restart boundary across manager closes; it is cleared only on a new boot. */
+  async requireRestart(bootIdentity) {
+    if (typeof bootIdentity !== 'string' || !/^\d{15,20}$/.test(bootIdentity)) throw new Error('Windows boot identity could not be verified.');
+    await this.write({ ...await this.read(), restartBoot: bootIdentity, status: 'restartRequired' });
+  }
+
+  async clearRestart() {
+    const state = await this.read();
+    delete state.restartBoot;
+    await this.write(state);
+  }
+
   async resetRuntime() {
     const state = await this.read();
-    await this.write({ schema: 1, distribution: this.distribution, completed: [], configuration: state.configuration });
+    await this.write({ schema: 1, distribution: this.distribution, completed: [], configuration: state.configuration, ...(state.restartBoot ? { restartBoot: state.restartBoot, stage: 'windows', status: 'restartRequired' } : {}) });
   }
 
   /** Journal before effects. Never save exception text, subprocess output or caller input. */

@@ -235,3 +235,13 @@ renderer-supplied binding. The elevated packaged SQL helper receives public meta
 only. The worker validates bindings and probes the real application container's TCP
 path before credentials enter SQL bootstrap. See SQL Troubleshooting/recovery for
 scope checks, pending-only repairs, UAC and native Windows acceptance requirements.
+
+
+Initial panel routing uses the measured runtime `ready` phase. The first-run view
+exposes installation, diagnostics and support; the installed view hides installation
+and reveals operational navigation. Runtime uninstall is a collapsed Control Panel
+section, retaining all existing SQL cleanup checks. Setup progress and dismissible
+restart/success outcomes are separate dialogs; closing an outcome never reboots or
+cancels backend work. Completed setup is announced only after a fresh ready status.
+The desktop journal retains `restartBoot` until a different Windows boot is measured,
+including across runtime reset, so a manager restart cannot bypass WSL activation.

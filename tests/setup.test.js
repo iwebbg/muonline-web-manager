@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { Backend } from '../src/main/backend.js';
+import { Backend as ProductionBackend } from '../src/main/backend.js';
+
+// Platform identity is mocked per coordinator test; the real probe has its own contract.
+class Backend extends ProductionBackend {
+  async windowsBootIdentity() { return '638990000000000000'; }
+}
 import { developmentProfile, productionProfile } from '../src/main/runtime-profile.js';
 import { SetupJournal } from '../src/main/setup-journal.js';
 
@@ -114,7 +119,8 @@ test('Windows reboot and Linux restart boundaries are journaled without shutting
     const journal = new SetupJournal(directory, 'Ubuntu-24.04');
     assert.equal((await journal.read()).linuxUser, 'muonline');
     await journal.resetRuntime();
-    assert.equal((await journal.read()).stage, undefined);
+    assert.equal((await journal.read()).stage, 'windows');
+    assert.equal((await journal.read()).restartBoot, '638990000000000000');
     assert.equal((await journal.read()).linuxUser, undefined);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
@@ -359,4 +365,46 @@ test('failed automatic SQL network preparation never enters application bootstra
     await assert.rejects(backend.install({ settings: { sqlHost: '127.0.0.1' } }), /UAC refused/);
     assert.equal((await backend.setup.read()).status, 'failed');
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('a recorded WSL restart blocks retries on the same boot and clears only after a real Windows boot change', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-wsl-boot-gate-'));
+  let boot = '638990000000000000';
+  const calls = [];
+  const backend = new Backend(process.cwd(), directory, undefined, 'en', undefined, async (file, args) => {
+    calls.push({ file, args });
+    if (file === 'powershell.exe') return JSON.stringify({ restartRequired: true, failureCode: 3010 });
+    if (args.includes('--version')) throw new Error('Fixture inbox WSL');
+    if (args.includes('--verbose')) return 'Ubuntu-24.04 Stopped 2';
+    return 'Ubuntu-24.04';
+  });
+  backend.requireWindows = () => {};
+  backend.windowsBootIdentity = async () => boot;
+  try {
+    await assert.rejects(backend.ensureDistribution(), error => error.code === 'WSL_RESTART_REQUIRED');
+    assert.equal((await backend.setup.read()).restartBoot, boot);
+    const before = calls.length;
+    await assert.rejects(backend.ensureDistribution(), error => error.code === 'WSL_RESTART_REQUIRED');
+    assert.equal(calls.length, before, 'Retry on the same boot never attempts WSL install/update');
+    const reopened = new Backend(process.cwd(), directory, undefined, 'en', undefined, async () => assert.fail('Manager restart must not bypass the boot gate'));
+    reopened.requireWindows = () => {};
+    reopened.windowsBootIdentity = async () => boot;
+    await assert.rejects(reopened.ensureDistribution(), error => error.code === 'WSL_RESTART_REQUIRED');
+    boot = '638991000000000000';
+    backend.runner = async (file, args) => args.includes('--verbose') ? 'Ubuntu-24.04 Stopped 2' : 'Ubuntu-24.04';
+    await backend.ensureDistribution();
+    assert.equal((await backend.setup.read()).restartBoot, undefined);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('Windows boot measurement accepts only the fixed read-only CIM probe result', async () => {
+  const backend = new ProductionBackend(process.cwd(), '/tmp/unused-boot-probe', undefined, 'en', undefined, async (file, args, input) => {
+    assert.equal(file, 'powershell.exe');
+    assert.match(Buffer.from(args.at(-1), 'base64').toString('utf16le'), /Win32_OperatingSystem.*LastBootUpTime/);
+    assert.equal(input, '');
+    return '638990000000000000\r\n';
+  });
+  assert.equal(await backend.windowsBootIdentity(), '638990000000000000');
+  backend.runner = async () => 'Unverified boot';
+  await assert.rejects(backend.windowsBootIdentity(), /could not be verified/);
 });

@@ -487,3 +487,31 @@ Next acceptance: clean Windows 10 and Windows 11 installations through UAC witho
 manual firewall command, repeat/resume without duplicate rules, external SQL with no
 local firewall mutation, and post-reboot address/scope changes. Mirrored/unknown WSL
 networking currently refuses automatic NAT rule creation instead of guessing a scope.
+
+## Onboarding, reboot boundaries and completion — 2026-11-20
+
+The user reports the previous Windows 10 VM installation completed and now plans
+Windows 11 VM, clean physical Windows 10/11 and finally Domain + SSL acceptance. This
+is evidence for that previous build, not a claim that the changes below passed Windows.
+
+Successful full modern-WSL installation (even MSI exit 0) and a legacy-to-modern CLI
+upgrade now require a boot boundary before distro work. The public desktop journal
+retains a measured Windows boot timestamp; retries or manager restart during that
+same boot cannot bypass it, and runtime cleanup preserves the pending gate. Only
+a measured new boot clears it. The separate feature-activation restart remains.
+
+First launch routes from actual runtime status: setup/SQL/help for new deployments,
+Control Panel/full navigation for ready sites with First installation hidden. Uninstall
+is a collapsed Control Panel section with its existing SQL credentials/confirmations.
+The busy dialog shows approximately 15 minutes (machine/network dependent) and elapsed
+time for installation only. A restart outcome gives explicit instructions; verified
+ready completion opens Control Panel at the top with a green check/X/Continue dialog.
+No automatic reboot or password persistence was introduced.
+
+`npm test`: 81 Node and 74 Python tests passed; 22 Windows-only checks skipped on Linux.
+`npm run test:ui` passed: EN/BG fresh setup, prominent restart, password clearing,
+success modal, Control Panel routing/scroll, startup after ready, navigation changes,
+uninstall recovery and permanent donate footer. Screenshots of both terminal dialogs
+were inspected on Linux; fixtures use isolated IPC. Native PowerShell expectations
+now require reboot for successful modern-runtime upgrades and remain unverified locally.
+Follow [Windows acceptance](windows-vm.md) for the user's pending VM/physical/SSL sequence.

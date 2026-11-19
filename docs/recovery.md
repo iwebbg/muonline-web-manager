@@ -47,9 +47,11 @@ is Microsoft Corporation. The checksum is not a signature and never replaces tha
 The package stays read-locked during verification and installation, then temporary
 files are removed. No renderer-supplied URL or command is used.
 
-The already elevated helper invokes Windows Installer with /qn /norestart and rechecks
-modern CLI flags after success. Reboot codes become the existing restartRequired
-checkpoint; no automatic reboot or global WSL shutdown runs. Download, verification,
+The already elevated helper invokes Windows Installer with /qn /norestart. Successful
+full-runtime installation (including exit 0), or an update that first enables the
+modern CLI flags, ends at a restartRequired checkpoint before distro work. Existing
+modern runtimes do not receive this extra upgrade restart. Native reboot codes also
+become a restartRequired checkpoint; no automatic reboot or global WSL shutdown runs. Download, verification,
 installer and activation failures have bounded EN/BG recovery messages and retain the
 distros. It never falls back to WSL1 or an interactive distro installer. The ordinary
 user needs only Install/Resume and the requested Windows UAC/reboot actions.
@@ -293,3 +295,28 @@ does not change Start's behavior. A later WSL subnet change on an already comple
 installation still requires diagnosis/configuration recovery; automatic ongoing
 readdressing is not implied. Narrow rules can remain after a later failed bootstrap;
 retry reuses them, and SQL effects are not automatically rolled back.
+
+
+## Reboot and completion notices
+
+The manager records the Windows boot timestamp (read-only Win32_OperatingSystem CIM)
+when feature activation or modern WSL installation requires a restart. Retrying
+Install/Resume in the same boot stops before WSL install/update; closing the manager
+or removing runtime components does not clear the gate. A measured new boot clears
+it and environment setup is rechecked. Invalid/unavailable boot identity fails closed.
+No automatic Windows reboot is performed and temporary passwords remain ephemeral.
+
+A dedicated dismissible restart dialog explains how to restart, reopen Manager and
+Resume. A separate successful-install dialog appears only after a fresh installed
+`ready` status: it shows a green check and X/Continue close controls, with Control
+Panel already opened at the top underneath. The busy overlay retains its elapsed
+timer and gives an approximate first-install duration of about 15 minutes, explicitly
+dependent on machine/network speed; it is not a countdown or guaranteed deadline.
+
+First launch uses the measured runtime state. New/incomplete setups start at First
+installation with SQL Troubleshooting and Help available; optional tools can open
+Control Panel for component maintenance. Ready deployments open Control Panel with
+the full operational navigation and hide First installation. Uninstall's SQL target,
+private credentials and irreversible confirmations live in its collapsed Control
+Panel section. Failed status checks do not count as completed installation. The
+three donation links remain visible below both busy and terminal dialogs.

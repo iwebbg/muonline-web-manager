@@ -25,6 +25,8 @@ let releaseHeld = null;
 let heldSetupStage = null;
 let heldError = null;
 let bootstrapMode = null;
+let onboardingMode = null;
+let rebootCheckpoint = false;
 let savedBootstrapEndpoint = { host: '127.0.0.1', port: 1433, gameHost: '127.0.0.1', gamePort: 1433 };
 let refuseUninstall = true;
 const timer = setTimeout(() => { console.error('Electron smoke test timed out.'); app.exit(1); }, 60000);
@@ -59,6 +61,15 @@ async function smoke() {
           resolve({ ok: true, result: action === 'status' ? { installed: true, phase: 'ready', version: installedVersion, access: runtimeAccess, services: '[]', gameWrites: runtimeWrites } : 'Completed test operation' });
         };
       });
+    }
+    if (action === 'setupStatus' && rebootCheckpoint) return { ok: true, result: { schema: 1, stage: 'windows', status: 'restartRequired', completed: [], configuration: {} } };
+    if (['install','resumeInstall'].includes(action) && onboardingMode) {
+      if (onboardingMode === 'restart') {
+        rebootCheckpoint = true;
+        return { ok: false, code: 'WSL_RESTART_REQUIRED', error: 'Restart Windows, then click Install again to continue. Installation progress has been saved.' };
+      }
+      runtimeInstalled = true; runtimePhase = 'ready'; rebootCheckpoint = false;
+      return { ok: true, result: 'Complete' };
     }
     if (action === 'setupStatus' && heldSetupStage) return { ok: true, result: { schema: 1, stage: heldSetupStage, status: 'running', completed: [] } };
     if (action === 'sqlSuggest') return { ok: true, result: { suggestion: { host: '172.20.48.1', port: 1433, instance: 'SQLEXPRESS' } } };
@@ -125,6 +136,7 @@ async function smoke() {
   });
   ipcMain.handle('manager:link', (event, target) => { openedLinks.push(target); });
   window = new BrowserWindow({ show: true, width: 1280, height: 1000, webPreferences: { preload: path.resolve('src/main/preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  window.webContents.on('console-message', event => { if (event.level === 'error') console.error('Renderer:',event.message); });
   await window.loadFile(path.resolve('src/renderer/index.html'));
   await waitUntilReady();
   assert.doesNotMatch(await window.webContents.executeJavaScript('document.querySelector("#setupNotice").textContent'), /wsl -d/);
@@ -136,7 +148,7 @@ async function smoke() {
     for (const page of ['overview', 'install', 'access', 'admins', 'sql', 'backup', 'updates', 'support']) {
       await window.webContents.executeJavaScript(`document.querySelector('[data-page="${page}"]').click()`);
       await window.webContents.executeJavaScript(`new Promise(resolve=>{const timer=setInterval(()=>{if(!document.querySelector('#language').disabled){clearInterval(timer);resolve();}},10);})`);
-      const state = await window.webContents.executeJavaScript(`({ links: [...document.querySelectorAll('footer a')].map(a => a.href), bottom: document.querySelector('footer').getBoundingClientRect().bottom, height: innerHeight, heading: document.querySelector('h1').textContent, body: document.querySelector('#content').textContent, lang: document.documentElement.lang })`);
+      const state = await window.webContents.executeJavaScript(`({ links: [...document.querySelectorAll('footer a')].map(a => a.href), bottom: document.querySelector('footer').getBoundingClientRect().bottom, height: innerHeight, heading: document.querySelector('h1').textContent, body: document.querySelector('#content').innerText, lang: document.documentElement.lang })`);
       assert.equal(state.links.length, 3);
       assert.ok(state.bottom <= state.height + 1);
       assert.ok(state.heading.length > 0);
@@ -169,7 +181,7 @@ async function smoke() {
 
         assert.equal(await window.webContents.executeJavaScript(`document.querySelector('.install-helpers').open`), false);
         assert.equal(await window.webContents.executeJavaScript(`Boolean(document.querySelector('#installForm').compareDocumentPosition(document.querySelector('.install-helpers')) & Node.DOCUMENT_POSITION_FOLLOWING)`), true);
-        assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').disabled`), true);
+        assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallForm')`), null, 'Uninstall is separate from First installation');
         assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="trustCertificate"]').checked`), true, 'Initial setup defaults to trusting the SQL server certificate');
       }
       if (page === 'updates') {
@@ -414,13 +426,16 @@ async function smoke() {
   await window.webContents.executeJavaScript(`(()=>{const checkbox=document.querySelector('[name="confirmSqlEndpoint"]'); checkbox.checked=true; checkbox.dispatchEvent(new Event('change')); document.querySelector('#resumeInstall').click();})();`);
   await idle();
   assert.equal(operations.filter(op => op.action === 'resumeInstall').length, resumesBefore + 1);
-  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="sqlPassword"]').value`), '');
-  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#sqlEndpointConfirmation').hidden`), true);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installForm')`), null, 'Completed setup routes to Control Panel');
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').open`), true);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').dataset.kind`), 'success');
+  await window.webContents.executeJavaScript(`document.querySelector('#outcomeClose').click(); document.querySelector('[data-page="install"]').click();`);
   bootstrapMode = 'automatic';
   await window.webContents.executeJavaScript(`document.querySelector('[name="sqlHost"]').value='127.0.0.1'; document.querySelector('#resumeInstall').click();`);
   await idle();
-  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="sqlHost"]').value`), '172.25.160.1', 'The automatically detected endpoint replaces the local input');
-  await window.webContents.executeJavaScript(`document.querySelector('[data-page="install"]').click(); document.querySelector('.uninstall-panel').open=true; document.querySelector('#uninstallName').value='Personal-Linux'; document.querySelector('#uninstallConfirm').checked=true; document.querySelector('#uninstallForm').dispatchEvent(new Event('input'));`);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').open`), true);
+  await window.webContents.executeJavaScript(`document.querySelector('#outcomeClose').click();`);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-page="overview"]').click(); document.querySelector('.uninstall-panel').open=true; document.querySelector('#uninstallName').value='Personal-Linux'; document.querySelector('#uninstallConfirm').checked=true; document.querySelector('#uninstallForm').dispatchEvent(new Event('input'));`);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').disabled`), true);
   await window.webContents.executeJavaScript(`document.querySelector('#uninstallName').value='MuOnline-Dev'; document.querySelector('#uninstallForm').dispatchEvent(new Event('input'));`);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').disabled`), true);
@@ -442,7 +457,50 @@ async function smoke() {
   await idle();
   assert.equal(operations.filter(op => op.action === 'uninstallRuntime').length, 2);
   assert.equal(runtimeInstalled, false);
-  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallSqlPassword').value`), '');
-  console.log('PASS: all eight pages in EN/BG, support/company links, branding and compact navigation, SQL diagnostic evidence and explicit change confirmation, persistent language, preserved unsent fields, permanent donate footer, sandbox bridge, administrator form, password cleanup, delayed modal progress, live setup stages, final status refresh, error focus/scroll and check-only updates. Screenshots: artifacts/review/.');
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallSqlPassword')`), null);
+  assert.equal(await window.webContents.executeJavaScript(`Boolean(document.querySelector('#installForm'))`), true);
+  // Verify the actual first-run journey independently from the page-translation fixture.
+  for (const locale of ['en', 'bg']) {
+    await selectLanguage(locale);
+    runtimeInstalled = false; runtimePhase = 'bootstrap-pending'; pending = false;
+    onboardingMode = 'restart'; rebootCheckpoint = false;
+    const freshLoad = new Promise(resolve => window.webContents.once('did-finish-load', resolve));
+    window.webContents.reload(); await freshLoad;
+    await window.webContents.executeJavaScript(`new Promise(resolve=>{const timer=setInterval(()=>{if(document.querySelector('main').getAttribute('aria-busy')==='false'){clearInterval(timer);resolve();}},10);})`);
+    assert.deepEqual(await window.webContents.executeJavaScript(`Array.from(document.querySelectorAll('nav [data-page]')).filter(button=>!button.hidden).map(button=>button.dataset.page)`), ['install','sql','support']);
+    assert.equal(await window.webContents.executeJavaScript(`Boolean(document.querySelector('#installForm'))`), true);
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallForm')`), null);
+    await window.webContents.executeJavaScript(`(()=>{const form=document.querySelector('#installForm'); for(const [name,value] of Object.entries({sqlPassword:'TemporaryPrivate123!',adminName:'Owner',adminEmail:'owner@example.test',adminPassword:'AdminPrivate123!'})){form.elements[name].value=value;} form.querySelector('button[type="submit"]').click();})();`);
+    await idle();
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').dataset.kind`), 'restart');
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').open`), true);
+    assert.match(await window.webContents.executeJavaScript(`document.querySelector('#installationEstimate').textContent`), /15/);
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="sqlPassword"]').value`), '');
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').getBoundingClientRect().bottom <= document.querySelector('footer').getBoundingClientRect().top + 1`), true);
+    await fs.writeFile(`artifacts/review/restart-required-${locale}.png`, (await window.webContents.capturePage()).toPNG());
+    await window.webContents.executeJavaScript(`document.querySelector('#outcomeClose').click()`);
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').open`), false);
+    onboardingMode = 'success';
+    await window.webContents.executeJavaScript(`document.querySelector('[name="sqlPassword"]').value='TemporaryPrivate123!'; document.querySelector('[name="adminPassword"]').value='AdminPrivate123!'; document.querySelector('#resumeInstall').click();`);
+    await idle();
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').open`), true);
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').dataset.kind`), 'success');
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#outcomeIcon').textContent`), '✓');
+    assert.equal(await window.webContents.executeJavaScript(`scrollY`), 0, 'Successful installation shows the top of Control Panel');
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[data-page="install"]').hidden`), true);
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installForm')`), null);
+    assert.equal(await window.webContents.executeJavaScript(`Boolean(document.querySelector('#uninstallForm'))`), true);
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelectorAll('nav [data-page]:not([hidden])').length`), 7);
+    await fs.writeFile(`artifacts/review/installation-complete-${locale}.png`, (await window.webContents.capturePage()).toPNG());
+    await window.webContents.executeJavaScript(`document.querySelector('#outcomeContinue').click()`);
+    const readyLoad = new Promise(resolve => window.webContents.once('did-finish-load', resolve));
+    window.webContents.reload(); await readyLoad;
+    await window.webContents.executeJavaScript(`new Promise(resolve=>{const timer=setInterval(()=>{if(document.querySelector('main').getAttribute('aria-busy')==='false'){clearInterval(timer);resolve();}},10);})`);
+    assert.equal(await window.webContents.executeJavaScript(`Boolean(document.querySelector('#webVersion'))`), true);
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[data-page="install"]').hidden`), true);
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').open`), false, 'Completed-install notification does not repeat on startup');
+  }
+  onboardingMode = null;
+  console.log('PASS: all eight pages in EN/BG, support/company links, branding and compact navigation, SQL diagnostic evidence and explicit change confirmation, persistent language, preserved unsent fields, permanent donate footer, sandbox bridge, administrator form, password cleanup, delayed modal progress, live setup stages, final status refresh, error focus/scroll and check-only updates; first-run navigation, reboot/success dialogs and verified Control Panel routing in EN/BG. Screenshots: artifacts/review/.');
 }
 app.whenReady().then(smoke).then(() => { clearTimeout(timer); app.exit(0); }).catch(error => { clearTimeout(timer); console.error(error); app.exit(1); });

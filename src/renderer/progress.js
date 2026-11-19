@@ -22,6 +22,9 @@ export class OperationProgress {
     document.querySelector('#progressTitle').textContent = token.title;
     document.querySelector('#progressHint').textContent = t('progress.hint');
     document.querySelector('#progressStep').textContent = t('progress.waiting');
+    const estimate = document.querySelector('#installationEstimate');
+    estimate.hidden = !['install', 'resumeInstall'].includes(action);
+    estimate.textContent = token.t('progress.estimate');
     this.tick();
     token.delay = setTimeout(() => {
       if (this.current !== token) return;

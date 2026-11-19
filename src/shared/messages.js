@@ -2,6 +2,7 @@ import { resolveLocale, translate } from './i18n.js';
 
 /** Known application messages only. Arbitrary logs and SQL diagnostics are not translated. */
 const bulgarian = {
+  "Windows boot identity could not be verified.": "Не може да се потвърди последното стартиране на Windows. Провери правата и support логовете.",
   "A unique local SQL Server listener could not be verified. Check SQL Troubleshooting and the SQL port.": "Не може да се потвърди еднозначно локалният SQL Server. Провери SQL Troubleshooting и SQL порта.",
   "Local SQL firewall preparation failed. Check UAC permissions and SQL Troubleshooting.": "Настройката на локалното SQL firewall правило е неуспешна. Провери UAC правата и SQL Troubleshooting.",
   "Local SQL Server is still unreachable after firewall setup. Check SQL Troubleshooting.": "Локалният SQL Server остава недостъпен след firewall настройката. Провери SQL Troubleshooting.",
