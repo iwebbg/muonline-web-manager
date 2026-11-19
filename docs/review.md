@@ -426,3 +426,20 @@ PS1 file path via UTF-8 JSON stdin. The regression test bounds argv below 8192
 characters, checks quoted `-File`/UAC invocation, exercises spaces/Cyrillic paths and
 retains reboot journaling. `npm test`: 71 Node and 72 Python tests passed; 19 native
 Windows tests skipped on Linux. Real Windows UAC execution still needs the new build.
+
+## Elevated WSL setup failure reporting — 2026-11-19
+
+The supplied VM log `20261119T182926273-install-b8a158ca.log` shows inbox WSL
+rejecting `--version`, followed by elevated PowerShell exit 1 with no child error in
+the parent streams. It does not prove a missing file or identify the failed child
+command. Setup now writes a bounded stage/error report, checks it against the child
+exit code, logs it and cleans up. Missing reports cannot turn exit 0 into readiness.
+WSL command capture also tolerates native stderr under PowerShell 5.1 and checks
+exit codes before proceeding to signed MSI fallback.
+
+`npm test`: 72 Node tests and 72 Python tests passed; 22 Windows-only contracts
+skipped on Linux. Added contracts cover result cleanup, unexpected failure refusal,
+stderr fallback and the actual wrapper's quoted Unicode paths/report transport.
+Windows fixtures now run from BOM-prefixed files rather than expanding installer
+and fixture source into encoded argv. The new build still requires a VM retry;
+these local checks do not prove that the reported Windows failure is resolved.

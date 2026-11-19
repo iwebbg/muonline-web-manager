@@ -1,3 +1,5 @@
+param([string]$ResultPath = '')
+
 # Machine-wide feature preparation only. Linux distro installation remains in the original user's session.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -5,17 +7,47 @@ $featureNames = @('Microsoft-Windows-Subsystem-Linux', 'VirtualMachinePlatform')
 $changed = $false
 $restartRequired = $false
 
+# Only this machine-setup script writes this optional main-owned result file.
+$script:preparationStage = 'windows-features'
+$script:preparationFailure = ''
+function Complete-WslPreparation {
+    param([int]$Code)
+    if ($ResultPath) {
+        $report = @{failureCode=$Code; restartRequired=($Code -in @(3010,1641)); stage=$script:preparationStage; detail=$script:preparationFailure}
+        [IO.File]::WriteAllText($ResultPath, ($report | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding($false)))
+    }
+    exit $Code
+}
+
+# Windows PowerShell 5.1 turns redirected native stderr into ErrorRecords.
+# A failed updater must reach the signed MSI fallback rather than aborting on stderr.
+function Invoke-WslSetupCommand {
+    param([string[]]$Arguments)
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $text = (& wsl.exe @Arguments 2>&1 | Out-String) -replace '\x00', ''
+        $code = $LASTEXITCODE
+        if ($null -eq $code) { throw 'WSL did not return an exit code.' }
+        return [pscustomobject]@{Text=$text; ExitCode=$code}
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+}
+
 # Install only the stable x64 WSL asset from Microsoft's fixed upstream repository.
 function Install-ModernWslRuntime {
     $directory = $null
     $lockedPackage = $null
     $failureCode = 51
     try {
+        $script:preparationStage = 'runtime-windows-version'
         $windows = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
         if ([int]$windows.CurrentBuildNumber -lt 19044) {
             return 50
         }
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $script:preparationStage = 'runtime-metadata'
         $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/microsoft/WSL/releases/latest' -Headers @{'User-Agent'='MuOnline-Web-Manager'; 'Accept'='application/vnd.github+json'} -TimeoutSec 60 -MaximumRedirection 0
         if ($release.draft -or $release.prerelease -or $release.tag_name -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
             return 51
@@ -32,6 +64,7 @@ function Install-ModernWslRuntime {
         $directory = Join-Path ([IO.Path]::GetTempPath()) ('muonline-wsl-' + [guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $directory | Out-Null
         $package = Join-Path $directory 'wsl.x64.msi'
+        $script:preparationStage = 'runtime-download'
         $download = Invoke-WebRequest -Uri $expectedUrl -OutFile $package -UseBasicParsing -PassThru -TimeoutSec 300 -MaximumRedirection 5
         $finalUri = $download.BaseResponse.ResponseUri
         if ($finalUri.Scheme -ne 'https' -or $finalUri.Host -notin @('github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com')) {
@@ -42,6 +75,7 @@ function Install-ModernWslRuntime {
         if ($lockedPackage.Length -ne [long]$asset.size) {
             return 52
         }
+        $script:preparationStage = 'runtime-verification'
         $failureCode = 52
         $actualHash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash
         if ($actualHash -ine $asset.digest.Substring(7)) {
@@ -52,6 +86,7 @@ function Install-ModernWslRuntime {
         if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(^|,\s*)O=Microsoft Corporation(,|$)') {
             return 52
         }
+        $script:preparationStage = 'runtime-msi'
         $failureCode = 53
         $installation = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', ('"' + $package + '"'), '/qn', '/norestart') -WindowStyle Hidden -Wait -PassThru
         if ($installation.ExitCode -in @(3010, 1641)) {
@@ -62,6 +97,7 @@ function Install-ModernWslRuntime {
         }
         return 0
     } catch {
+        $script:preparationFailure = $_.Exception.Message.Substring(0, [Math]::Min(600, $_.Exception.Message.Length))
         return $failureCode
     } finally {
         if ($null -ne $lockedPackage) {
@@ -77,7 +113,7 @@ try {
     foreach ($featureName in $featureNames) {
         $feature = Get-WindowsOptionalFeature -Online -FeatureName $featureName
         if ($feature.State -in @('EnablePending', 'DisablePending')) {
-            exit 3010
+            Complete-WslPreparation -Code 3010
         }
         if ($feature.State -ne 'Enabled') {
             $result = Enable-WindowsOptionalFeature -Online -FeatureName $featureName -All -NoRestart
@@ -90,44 +126,50 @@ try {
 
     # Newly enabled machine features must be activated before continuing WSL installation.
     if ($changed) {
-        exit 3010
+        Complete-WslPreparation -Code 3010
     }
 
     # Older Windows 10 inbox executables advertise different flags. Never guess their syntax.
-    $helpText = ((& wsl.exe --help 2>&1 | Out-String) -replace '\x00', '')
+    $script:preparationStage = 'wsl-help'
+    $helpText = (Invoke-WslSetupCommand -Arguments @('--help')).Text
     $requiredFlags = @('--version', '--install', '--no-distribution', '--no-launch')
     $missingFlags = @($requiredFlags | Where-Object { $helpText -notmatch [regex]::Escape($_) })
     if ($missingFlags.Count -gt 0 -and $helpText -match '--update') {
+        $script:preparationStage = 'wsl-update'
         if ($helpText -match '--web-download') {
-            & wsl.exe --update --web-download | Out-Null
+            $update = Invoke-WslSetupCommand -Arguments @('--update', '--web-download')
         } else {
-            & wsl.exe --update | Out-Null
+            $update = Invoke-WslSetupCommand -Arguments @('--update')
         }
-        $updateCode = $LASTEXITCODE
+        $updateCode = $update.ExitCode
         if ($updateCode -in @(3010, 1641)) {
-            exit 3010
+            Complete-WslPreparation -Code 3010
         }
-        $helpText = ((& wsl.exe --help 2>&1 | Out-String) -replace '\x00', '')
+        $script:preparationStage = 'wsl-help'
+        $helpText = (Invoke-WslSetupCommand -Arguments @('--help')).Text
         $missingFlags = @($requiredFlags | Where-Object { $helpText -notmatch [regex]::Escape($_) })
     }
     if ($missingFlags.Count -gt 0) {
         # Kernel-only updates and Store failures fall back to Microsoft's signed full runtime.
         $runtimeCode = Install-ModernWslRuntime
         if ($runtimeCode -ne 0) {
-            exit $runtimeCode
+            Complete-WslPreparation -Code $runtimeCode
         }
-        $helpText = ((& wsl.exe --help 2>&1 | Out-String) -replace '\x00', '')
+        $script:preparationStage = 'wsl-help'
+        $helpText = (Invoke-WslSetupCommand -Arguments @('--help')).Text
         $missingFlags = @($requiredFlags | Where-Object { $helpText -notmatch [regex]::Escape($_) })
         if ($missingFlags.Count -gt 0) {
-            exit 54
+            Complete-WslPreparation -Code 54
         }
     }
 
     # WSL can print "reboot required" and still return zero; check actual feature state as well.
-    & wsl.exe --install --no-distribution | Out-Null
-    $installCode = $LASTEXITCODE
+    $script:preparationStage = 'wsl-install'
+    $installation = Invoke-WslSetupCommand -Arguments @('--install', '--no-distribution')
+    $installCode = $installation.ExitCode
+    if ($installCode -notin @(0,3010,1641)) { $script:preparationFailure = $installation.Text.Substring(0, [Math]::Min(600, $installation.Text.Length)) }
     if ($installCode -notin @(0, 3010, 1641)) {
-        exit $installCode
+        Complete-WslPreparation -Code $installCode
     }
     foreach ($featureName in $featureNames) {
         $feature = Get-WindowsOptionalFeature -Online -FeatureName $featureName
@@ -136,10 +178,10 @@ try {
         }
     }
     if ($changed -or $restartRequired -or $installCode -in @(3010, 1641)) {
-        exit 3010
+        Complete-WslPreparation -Code 3010
     }
-    exit 0
+    Complete-WslPreparation -Code 0
 } catch {
-    Write-Error 'Windows WSL preparation failed. Check Windows optional feature availability and permissions.'
-    exit 1
+    $script:preparationFailure = $_.Exception.Message.Substring(0, [Math]::Min(600, $_.Exception.Message.Length))
+    Complete-WslPreparation -Code 1
 }

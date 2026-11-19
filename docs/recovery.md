@@ -261,3 +261,13 @@ fields are removed before writing. Logs may still contain technical/user informa
 review them before sharing. They remain available after WSL removal. Recent files
 are bounded/rotated (30 files, 2 MiB per file); export the relevant file before older
 ones expire. The manager does not send support logs automatically.
+
+Elevated Windows preparation writes a bounded result with its setup stage, exit code
+and machine-setup error into a main-owned temporary JSON file. The non-elevated
+coordinator checks the report against the process exit code, appends it to the
+redacted support log as `Windows WSL setup: ...`, and removes the temporary directory.
+The helper receives no SQL credentials. A missing report is labeled
+`elevated-process`; unexpected nonzero exits cannot advance to distro installation.
+On Windows PowerShell 5.1, native WSL stderr is captured with a local Continue error
+preference and the native exit code is checked explicitly. A failing kernel updater
+therefore reaches the signed MSI fallback instead of aborting via NativeCommandError.

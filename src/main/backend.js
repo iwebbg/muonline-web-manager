@@ -171,8 +171,30 @@ export class Backend {
           // Elevate the packaged file by path. Nested -EncodedCommand expanded the
           // installer source past Windows' command-line limit before UAC could open.
           const preparation = path.resolve(this.resources, 'runtime', 'setup-windows-wsl.ps1');
-          const script = `[Console]::InputEncoding=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false); $ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; $payload=[Console]::In.ReadToEnd()|ConvertFrom-Json; if($payload.path -match '["\\r\\n]'){throw 'Invalid path'}; $arguments=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',('"'+$payload.path+'"')); $p=Start-Process -FilePath powershell.exe -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -Wait -PassThru; if($p.ExitCode -notin @(0,50,51,52,53,54,3010,1641)){exit $p.ExitCode}; @{restartRequired=($p.ExitCode -in @(3010,1641));failureCode=$p.ExitCode}|ConvertTo-Json -Compress`;
-          const result = JSON.parse((await this.runner('powershell.exe', encodedPowerShell(script), JSON.stringify({ path: preparation }), 900000)).trim());
+          const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-wsl-setup-'));
+          let result;
+          try {
+            const script = `[Console]::InputEncoding=New-Object System.Text.UTF8Encoding($false)
+[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)
+$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'
+$payload=[Console]::In.ReadToEnd()|ConvertFrom-Json
+foreach($value in @($payload.path,$payload.result)){if($value -match '["\\r\\n]'){throw 'Invalid path'}}
+$arguments=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',('"'+$payload.path+'"'),'-ResultPath',('"'+$payload.result+'"'))
+$p=Start-Process -FilePath powershell.exe -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -Wait -PassThru
+if(Test-Path -LiteralPath $payload.result){
+    $report=Get-Content -LiteralPath $payload.result -Raw -Encoding UTF8|ConvertFrom-Json
+    if($report.failureCode -ne $p.ExitCode){throw 'WSL setup result does not match process exit code'}
+    $report|ConvertTo-Json -Compress
+}else{
+    $code=$p.ExitCode; if($code -eq 0){$code=1}
+    @{restartRequired=($code -in @(3010,1641));failureCode=$code;stage='elevated-process';detail='Setup exited before reporting its stage. Check the packaged script and PowerShell startup.'}|ConvertTo-Json -Compress
+}`;
+            result = JSON.parse((await this.runner('powershell.exe', encodedPowerShell(script), JSON.stringify({ path: preparation, result: path.join(directory, 'result.json') }), 900000)).trim());
+            // This setup report contains no SQL credentials; existing support-log redaction still applies.
+            await this.activeLog?.append('Windows WSL setup: ' + JSON.stringify(result).slice(0, 2000));
+          } finally {
+            await rm(directory, { recursive: true, force: true });
+          }
           const failures = {
             50: 'Windows needs updating before the current WSL runtime can be installed. Update Windows, then click Install again. Existing distributions were retained.',
             51: 'The official WSL installer could not be downloaded. Check internet access and retry Install. Existing distributions were retained.',
@@ -181,6 +203,9 @@ export class Backend {
             54: 'WSL runtime was installed but its modern commands are not available yet. Restart Windows, then retry Install.'
           };
           if (failures[result.failureCode]) throw new Error(failures[result.failureCode]);
+          if (!result.restartRequired && result.failureCode !== undefined && result.failureCode !== 0) {
+            throw new Error('Windows WSL preparation failed. Open support logs for the failed setup stage, then retry Install.');
+          }
           if (result.restartRequired) {
             const restart = new Error('Restart Windows, then click Install again to continue. Installation progress has been saved.');
             restart.code = 'WSL_RESTART_REQUIRED';

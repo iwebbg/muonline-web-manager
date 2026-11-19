@@ -251,7 +251,12 @@ test('WSL elevation keeps the command short and passes the packaged script path 
     assert.match(wrapper, /-Verb RunAs/);
     assert.match(wrapper, /InputEncoding=New-Object System.Text.UTF8Encoding/);
     assert.ok(!wrapper.includes(resources), 'Paths never become PowerShell source');
-    assert.deepEqual(JSON.parse(input), { path: path.resolve(resources, 'runtime', 'setup-windows-wsl.ps1') });
+    const request = JSON.parse(input);
+    assert.equal(request.path, path.resolve(resources, 'runtime', 'setup-windows-wsl.ps1'));
+    assert.equal(path.basename(request.result), 'result.json');
+    assert.equal(wrapper.includes(request.result), false);
+    assert.match(wrapper, /Get-Content -LiteralPath/);
+    assert.match(wrapper, /result does not match process exit code/);
     return JSON.stringify({ restartRequired: true });
   });
   backend.requireWindows = () => {};
@@ -259,5 +264,28 @@ test('WSL elevation keeps the command short and passes the packaged script path 
     await assert.rejects(backend.ensureDistribution(), /Restart Windows/);
     assert.equal(elevation, true);
     assert.equal((await backend.setup.read()).status, 'restartRequired');
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('unexpected elevated setup exit is logged with its stage and never advances installation', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-wsl-stage-'));
+  const logged = [];
+  let resultFile;
+  const backend = new Backend(process.cwd(), directory, undefined, 'en', productionProfile, async (file, args, input) => {
+    if (file === 'wsl.exe') {
+      assert.ok(!args.includes('--install'), 'Do not install a distro after failed feature preparation');
+      throw new Error('Legacy WSL');
+    }
+    const request = JSON.parse(input);
+    resultFile = request.result;
+    return JSON.stringify({ failureCode: 1, restartRequired: false, stage: 'windows-features', detail: 'Fixture missing optional feature.' });
+  });
+  backend.requireWindows = () => {};
+  backend.activeLog = { append: async text => logged.push(text) };
+  try {
+    await assert.rejects(backend.ensureDistribution(), /support logs.*setup stage/);
+    assert.ok(logged.some(text => text.includes('windows-features') && text.includes('Fixture missing optional feature.')));
+    await assert.rejects(readFile(path.dirname(resultFile)), { code: 'ENOENT' });
+    assert.equal((await backend.setup.read()).status, 'failed');
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

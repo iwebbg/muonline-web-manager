@@ -2,6 +2,7 @@ import { resolveLocale, translate } from './i18n.js';
 
 /** Known application messages only. Arbitrary logs and SQL diagnostics are not translated. */
 const bulgarian = {
+  "Windows WSL preparation failed. Open support logs for the failed setup stage, then retry Install.": "Подготовката на Windows WSL е неуспешна. Отвори support логовете за точната стъпка на отказа, после опитай Инсталирай отново.",
   "SQL host points to the web container. Use the Windows SQL Server address.": "SQL адресът сочи към web контейнера. Използвай адреса на Windows SQL Server.",
   "Resume cannot change databases, logins or game profile. Restore the original installation fields.": "Продължаването не може да променя бази, logins или game профил. Възстанови първоначалните стойности на тези полета.",
   "SQL endpoint correction is allowed only before bootstrap completes.": "SQL адресът може да се коригира само преди bootstrap-ът да завърши.",
