@@ -170,9 +170,16 @@ export class Backend {
         await this.setup.run('windows', async () => {
           const preparation = (await readFile(path.join(this.resources, 'runtime', 'setup-windows-wsl.ps1'), 'utf8')).replaceAll('\r\n', '\n');
           const encoded = Buffer.from(preparation, 'utf16le').toString('base64');
-          const script = "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; $p=Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','" + encoded + "' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; if($p.ExitCode -notin @(0,50,3010,1641)){exit $p.ExitCode}; @{restartRequired=($p.ExitCode -in @(3010,1641));upgradeRequired=($p.ExitCode -eq 50)}|ConvertTo-Json -Compress";
+          const script = "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; $p=Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','" + encoded + "' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; if($p.ExitCode -notin @(0,50,51,52,53,54,3010,1641)){exit $p.ExitCode}; @{restartRequired=($p.ExitCode -in @(3010,1641));failureCode=$p.ExitCode}|ConvertTo-Json -Compress";
           const result = JSON.parse((await this.runner('powershell.exe', encodedPowerShell(script), '', 900000)).trim());
-          if (result.upgradeRequired) throw new Error('This WSL version is too old for automatic setup. Update Windows and install current WSL from Microsoft Store, then click Install again. Existing distributions were retained.');
+          const failures = {
+            50: 'Windows needs updating before the current WSL runtime can be installed. Update Windows, then click Install again. Existing distributions were retained.',
+            51: 'The official WSL installer could not be downloaded. Check internet access and retry Install. Existing distributions were retained.',
+            52: 'WSL installer verification failed. The package was not executed. Retry Install after checking Windows updates and network access.',
+            53: 'The verified WSL installer did not complete. Check Windows Installer and retry Install. Existing distributions were retained.',
+            54: 'WSL runtime was installed but its modern commands are not available yet. Restart Windows, then retry Install.'
+          };
+          if (failures[result.failureCode]) throw new Error(failures[result.failureCode]);
           if (result.restartRequired) {
             const restart = new Error('Restart Windows, then click Install again to continue. Installation progress has been saved.');
             restart.code = 'WSL_RESTART_REQUIRED';

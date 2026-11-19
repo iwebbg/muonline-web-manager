@@ -37,9 +37,22 @@ Older Windows 10 inbox WSL may still enumerate distros while rejecting --version
 modern install flags. Setup probes this case and the elevated helper reads advertised
 flags before invoking them. It tries --update only when advertised, adding
 --web-download only when supported to avoid requiring Store access, then rechecks.
-A kernel-only update is insufficient: if modern flags remain absent, setup retains all
-distros and asks for Windows updates and current Microsoft Store WSL. It never falls
-back to WSL1 or an interactive distro installer. Retry Install after updating WSL.
+A kernel-only update is insufficient. If modern flags remain absent, setup automatically
+retrieves the stable x64 MSI from the fixed microsoft/WSL GitHub repository. Windows
+builds below 19044 stop with a Windows-update instruction. Metadata must name one bounded
+x64 MSI with the canonical Microsoft repository URL and a SHA256 digest. The download
+must finish on an allowed HTTPS GitHub asset host; size and digest must match. Windows
+must independently report a valid Authenticode signature whose publisher organization
+is Microsoft Corporation. The checksum is not a signature and never replaces that check.
+The package stays read-locked during verification and installation, then temporary
+files are removed. No renderer-supplied URL or command is used.
+
+The already elevated helper invokes Windows Installer with /qn /norestart and rechecks
+modern CLI flags after success. Reboot codes become the existing restartRequired
+checkpoint; no automatic reboot or global WSL shutdown runs. Download, verification,
+installer and activation failures have bounded EN/BG recovery messages and retain the
+distros. It never falls back to WSL1 or an interactive distro installer. The ordinary
+user needs only Install/Resume and the requested Windows UAC/reboot actions.
 Resume repairs ownership of the manager-created Laravel storage directories before
 starting the non-root bootstrap container. Earlier installs left storage parent
 directories root-owned, causing the entrypoint's chmod to fail before any SQL work.

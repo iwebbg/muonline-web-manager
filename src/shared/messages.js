@@ -2,6 +2,11 @@ import { resolveLocale, translate } from './i18n.js';
 
 /** Known application messages only. Arbitrary logs and SQL diagnostics are not translated. */
 const bulgarian = {
+  "Windows needs updating before the current WSL runtime can be installed. Update Windows, then click Install again. Existing distributions were retained.": "Преди инсталирането на актуалния WSL runtime е нужно обновяване на Windows. Обнови Windows и натисни Инсталирай отново. Съществуващите дистрибуции са запазени.",
+  "The official WSL installer could not be downloaded. Check internet access and retry Install. Existing distributions were retained.": "Официалният WSL инсталатор не може да бъде изтеглен. Провери интернет връзката и опитай Инсталирай отново. Съществуващите дистрибуции са запазени.",
+  "WSL installer verification failed. The package was not executed. Retry Install after checking Windows updates and network access.": "Проверката на WSL инсталатора е неуспешна. Пакетът не е стартиран. Провери обновяванията на Windows и мрежовия достъп, после опитай отново.",
+  "The verified WSL installer did not complete. Check Windows Installer and retry Install. Existing distributions were retained.": "Провереният WSL инсталатор не завърши успешно. Провери Windows Installer и опитай отново. Съществуващите дистрибуции са запазени.",
+  "WSL runtime was installed but its modern commands are not available yet. Restart Windows, then retry Install.": "WSL runtime е инсталиран, но новите му команди още не са достъпни. Рестартирай Windows и опитай Инсталирай отново.",
   "This WSL version is too old for automatic setup. Update Windows and install current WSL from Microsoft Store, then click Install again. Existing distributions were retained.": "Тази версия на WSL е твърде стара за автоматична настройка. Обнови Windows и инсталирай актуалния WSL от Microsoft Store, после натисни Инсталирай отново. Съществуващите дистрибуции са запазени.",
   "Restart Windows, then click Install again to continue. Installation progress has been saved.": "Рестартирай Windows и натисни Инсталирай отново, за да продължиш. Напредъкът на инсталацията е запазен.",
   "Untracked application files exist. Recover installation state before uninstalling.": "Има файлове на приложение без запазено състояние. Възстанови състоянието преди деинсталиране.",

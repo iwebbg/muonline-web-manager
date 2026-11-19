@@ -379,3 +379,27 @@ help output; these PowerShell contracts do not run on this Linux workstation.
 Verification: 131 tests passed locally; 10 PowerShell contracts are Windows-only and
 remain unexecuted on this Linux workstation. Actual inbox upgrade/UAC and resumed
 installation still need the Windows VM test. No distributions or SQL data were removed.
+
+
+## Automatic signed WSL MSI fallback — 2026-11-19
+
+The normal Install/Resume flow now includes full WSL runtime installation when the
+legacy updater fails or only updates the kernel. The user does not need PowerShell
+commands or a separate manual MSI step. The existing elevated Windows preparation
+helper obtains only stable x64 assets from microsoft/WSL, verifies canonical source,
+HTTPS asset host, bounded size, SHA256 and independent valid Microsoft Authenticode
+signature, and invokes msiexec /qn /norestart. A read lock spans verification/install;
+temporary downloads are cleaned in finally. Existing application manifest trust and
+SQL/runtime credentials are unchanged. The loader's EN/BG Windows stage now describes
+preparation and component updating rather than feature activation only.
+
+Unit/UI verification covers bounded failure messages, no distro install after failed
+runtime setup, loader copy and normal recovery. Windows-only PowerShell contracts mock
+network, signatures and msiexec: they test matching hashes with invalid signatures,
+wrong publishers, untrusted source URLs, MSI failures and required restarts. They do not
+perform downloads or OS changes. Actual signed MSI execution and Win10/Win11/UAC remain
+unverified on this Linux workstation and require the clean Windows VM acceptance run.
+
+Final verification for this change: 132 local Node/Python tests passed and the
+Electron EN/BG smoke test passed. The 19 PowerShell contracts are Windows-only and
+were skipped on Linux; their pass status is not inferred from the other tests.

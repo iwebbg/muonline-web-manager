@@ -146,19 +146,19 @@ test('empty WSL inventory after reboot proceeds directly to Ubuntu instead of fa
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test('legacy inbox WSL with working inventory fails with upgrade guidance before unsupported distro flags', async () => {
+test('legacy inbox WSL with working inventory reports fallback download failure before unsupported distro flags', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-inbox-wsl-'));
   const calls = [];
   const backend = new Backend(process.cwd(), directory, undefined, 'bg', productionProfile, async (file, args) => {
     calls.push({ file, args });
-    if (file === 'powershell.exe') return JSON.stringify({ upgradeRequired: true, restartRequired: false });
+    if (file === 'powershell.exe') return JSON.stringify({ failureCode: 51, restartRequired: false });
     if (args.includes('--quiet')) return '';
     if (args.includes('--version')) throw new Error('Usage: wsl.exe [Argument] [Options...]');
     throw new Error('Unexpected command');
   });
   backend.requireWindows = () => {};
   try {
-    await assert.rejects(backend.ensureDistribution(), /too old.*Microsoft Store/);
+    await assert.rejects(backend.ensureDistribution(), /installer could not be downloaded/);
     assert.equal(calls.some(call => call.args.includes('--install') || call.args.includes('--unregister')), false);
     assert.equal((await backend.setup.read()).status, 'failed');
   } finally { await rm(directory, { recursive: true, force: true }); }
@@ -169,7 +169,7 @@ test('upgrading inbox WSL retains existing distro inventory and does not reinsta
   const calls = [];
   const backend = new Backend(process.cwd(), directory, undefined, 'en', productionProfile, async (file, args) => {
     calls.push({ file, args });
-    if (file === 'powershell.exe') return JSON.stringify({ upgradeRequired: false, restartRequired: false });
+    if (file === 'powershell.exe') return JSON.stringify({ failureCode: 0, restartRequired: false });
     if (args.includes('--quiet')) return 'Ubuntu-24.04\nPersonal-Linux';
     if (args.includes('--version')) throw new Error('Unknown option');
     if (args.includes('--verbose')) return 'Ubuntu-24.04 Stopped 2';
@@ -180,5 +180,24 @@ test('upgrading inbox WSL retains existing distro inventory and does not reinsta
     await backend.ensureDistribution();
     assert.equal(calls.some(call => call.args.includes('--install') || call.args.includes('--unregister') || call.args.includes('--shutdown')), false);
     assert.equal((await backend.setup.read()).status, 'complete');
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('automatic WSL installer failures report bounded reasons and never advance to distro setup', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-msi-failure-'));
+  try {
+    for (const [failureCode, reason] of [[50, /Windows needs updating/], [51, /could not be downloaded/], [52, /verification failed.*not executed/], [53, /installer did not complete/], [54, /commands are not available/]]) {
+      const calls = [];
+      const backend = new Backend(process.cwd(), directory, undefined, 'en', productionProfile, async (file, args) => {
+        calls.push({ file, args });
+        if (file === 'powershell.exe') return JSON.stringify({ restartRequired: false, failureCode });
+        if (args.includes('--quiet')) return '';
+        throw new Error('Legacy WSL');
+      });
+      backend.requireWindows = () => {};
+      await assert.rejects(backend.ensureDistribution(), reason);
+      assert.equal(calls.some(call => call.args.includes('--install') || call.args.includes('--unregister')), false);
+      assert.equal((await backend.setup.read()).status, 'failed');
+    }
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
