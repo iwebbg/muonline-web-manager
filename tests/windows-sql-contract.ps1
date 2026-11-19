@@ -4,11 +4,13 @@ $ErrorActionPreference = 'Stop'
 $script:rules = @{}
 $script:added = 0
 $script:occupied = $false
-$script:instance = @{name='SQLEXPRESS'; id='MSSQL15.SQLEXPRESS'; service='MSSQL$SQLEXPRESS'; pid=42}
+$script:listener = $false
+$script:instance = @{name='SQLEXPRESS'; id='MSSQL15.SQLEXPRESS'; service='MSSQL$SQLEXPRESS'; pid=42; state='Running'; tcp=@{enabled=$true}}
 function Get-SqlInstances { return $script:instance }
 function Get-NetTCPConnection {
     [CmdletBinding()] param($State)
     if ($script:occupied) { return @{LocalPort=1433; OwningProcess=999} }
+    if ($script:listener) { return @{LocalPort=1433; OwningProcess=42; LocalAddress='0.0.0.0'} }
     return @()
 }
 function Get-NetIPAddress {
@@ -72,6 +74,22 @@ $script:rules.Clear()
 $script:rules['manual-rule'] = @{Name='manual-rule'; Group='manual'; Profile='Any'; Direction='Inbound'; Action='Allow'; Protocol='TCP'; LocalPort='1433'; LocalAddress='172.30.176.1'; RemoteAddress='172.30.176.0/20'; Enabled='True'}
 $manual=Invoke-Change $request
 if (-not $manual.ok -or $manual.changed -or $script:added -ne 1) { throw 'Equivalent manual rule was duplicated' }
+# Install authorizes only the narrow firewall action, with the same observed SQL PID.
+$request.installation=$true
+$request.expected.pid=42
+$script:listener=$true
+$automatic=Invoke-Change $request
+if (-not $automatic.ok -or $automatic.changed -or $script:added -ne 1) { throw 'Automatic equivalent-rule reuse failed' }
+$request.expected.pid=99
+$rejected=$false
+try { Invoke-Change $request | Out-Null } catch { $rejected=$true }
+if (-not $rejected) { throw 'Changed SQL PID was accepted by Install' }
+$request.expected.pid=42
+$script:listener=$false
+$rejected=$false
+try { Invoke-Change $request | Out-Null } catch { $rejected=$true }
+if (-not $rejected) { throw 'Missing SQL listener was accepted by Install' }
+$request.installation=$false
 $request.confirmed=$false
 $rejected=$false
 try { Invoke-Change $request | Out-Null } catch { $rejected=$true }

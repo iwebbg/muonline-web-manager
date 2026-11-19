@@ -226,3 +226,12 @@ the main-owned resource path through UTF-8 JSON stdin, validates and quotes the 
 and waits for UAC/exit status. The installer source is never nested inside encoded
 command arguments: double encoding exceeded Windows' command-line limit before UAC
 could launch. Spaces and Cyrillic installation paths remain data, not script source.
+
+The installer adds a journaled `sqlNetwork` step for pending first-install bootstrap.
+The editable SQL host is classified against measured Windows adapters. Only proven
+local targets are replaced by the measured WSL gateway; external hosts are preserved.
+Main owns the automatic firewall request and local instance binding, overwriting any
+renderer-supplied binding. The elevated packaged SQL helper receives public metadata
+only. The worker validates bindings and probes the real application container's TCP
+path before credentials enter SQL bootstrap. See SQL Troubleshooting/recovery for
+scope checks, pending-only repairs, UAC and native Windows acceptance requirements.

@@ -278,3 +278,18 @@ or `elevation-report` failure as JSON. After waiting it refreshes the elevated p
 before comparing exit codes. If the coordinator itself fails without usable JSON,
 main reads and logs any child report before removing the temporary directory; that
 report is diagnostic only and cannot turn coordinator failure into readiness.
+
+Install/Resume now prepares local SQL automatically before pending bootstrap. The
+main-owned repair confirmation can replace loopback or a currently measured local
+Windows address with the measured WSL gateway; endpoints not proven local retain
+the explicit same-server confirmation boundary. A local SQL instance ID is kept in
+private runtime state, allowing a pending install to rediscover the same instance
+without switching SQL servers. Runtime passwords and APP_KEY remain stable. Changing
+a bound instance or silently changing it to remote SQL is refused. Remote/cloud
+SQL installations do not receive local firewall changes or instance bindings.
+
+Existing ready installations are not retargeted by clicking Install, and this feature
+does not change Start's behavior. A later WSL subnet change on an already completed
+installation still requires diagnosis/configuration recovery; automatic ongoing
+readdressing is not implied. Narrow rules can remain after a later failed bootstrap;
+retry reuses them, and SQL effects are not automatically rolled back.

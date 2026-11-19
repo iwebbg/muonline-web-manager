@@ -313,3 +313,50 @@ test('coordinator launch failure retains the child report before cleaning tempor
     assert.equal((await backend.setup.read()).status, 'failed');
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test('Install provisions with the detected local endpoint and journals it without persisting temporary credentials', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-auto-local-sql-'));
+  const endpoint = { host: '192.168.1.7', port: 1433, gameHost: '192.168.1.7', gamePort: 1433 };
+  try {
+    for (const installed of [false, true]) {
+      const backend = new Backend(process.cwd(), directory);
+      backend.requireWindows = () => {};
+      backend.ensureEnvironment = async () => {};
+      let ready = false;
+      backend.sql.prepareInstallation = async (host, port) => {
+        assert.equal(host, '192.168.1.7');
+        assert.equal(Number(port), 1433);
+        return { host: '172.30.176.1', port: 1433, local: true, instanceId: 'MSSQL15.SQLEXPRESS', localAddresses: ['192.168.1.7', '172.30.176.1'] };
+      };
+      const provision = async request => {
+        assert.equal(request.settings.sqlHost, '172.30.176.1');
+        assert.equal(request.settings.localSqlInstanceId, 'MSSQL15.SQLEXPRESS');
+        assert.equal(request.settings.sqlPassword, 'current-private-secret');
+        if (installed) assert.deepEqual(request.settings.sqlEndpointChange, { confirmed: true, expected: endpoint });
+        ready = true;
+        return 'Complete';
+      };
+      backend.runtime = async request => request.action === 'status' ? { installed: ready || installed, phase: ready ? 'ready' : 'bootstrap-pending', bootstrapSqlEndpoint: endpoint } : provision(request);
+      backend.deploy = async (action, request) => provision(request);
+      const result = await backend.install({ settings: { sqlHost: '192.168.1.7', sqlPort: '1433', sqlAdmin: 'temporary-admin', sqlPassword: 'current-private-secret', localSqlInstanceId: 'renderer-forgery' } });
+      assert.deepEqual(result.sqlResolvedEndpoint, { host: '172.30.176.1', port: 1433 });
+      const journal = await readFile(path.join(directory, 'installation.json'), 'utf8');
+      assert.equal(JSON.parse(journal).configuration.sqlHost, '172.30.176.1');
+      assert.doesNotMatch(journal, /current-private-secret|temporary-admin|renderer-forgery/);
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('failed automatic SQL network preparation never enters application bootstrap', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-auto-local-refuse-'));
+  const backend = new Backend(process.cwd(), directory);
+  backend.requireWindows = () => {};
+  backend.ensureEnvironment = async () => {};
+  backend.runtime = async request => { assert.equal(request.action, 'status'); return { installed: false }; };
+  backend.deploy = async () => { assert.fail('Do not bootstrap before connectivity'); };
+  backend.sql.prepareInstallation = async () => { throw new Error('UAC refused'); };
+  try {
+    await assert.rejects(backend.install({ settings: { sqlHost: '127.0.0.1' } }), /UAC refused/);
+    assert.equal((await backend.setup.read()).status, 'failed');
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});

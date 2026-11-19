@@ -459,3 +459,31 @@ setup failure from coordinator failure without another installer build.
 The native wrapper fixture now covers child failure, delayed exit-code availability
 and UAC launch exceptions. Runtime resolution in the user's VM remains unverified;
 the new native fixture cases were not executed on Linux.
+
+## Automatic local SQL preparation with external SQL preserved — 2026-11-19
+
+The user confirmed a working Windows 10 VM installation after a manual firewall
+rule scoped to its measured WSL subnet. This validates that VM's manual networking
+fix; it does not validate the new automatic path.
+
+Install now retains the editable SQL host. Localhost/127.*, IPv6 loopback and exact
+current Windows adapter addresses are replaced with the measured Windows WSL gateway
+only after main-owned local listener validation, a UAC firewall operation and WSL TCP
+verification. Other hosts, including remote RFC1918/cloud endpoints, stay unchanged.
+The elevated helper reuses exact existing rules and checks SQL PID/listener and the
+private scope before mutation. The worker independently checks the actual application
+container's TCP path before bootstrap credentials are used. Pending local resumes keep
+the instance binding and generated secrets; ready deployments are not retargeted.
+
+`npm test`: 79 Node tests and 74 Python tests passed; 22 Windows-only checks skipped
+on Linux. New cases cover local aliases, remote preservation, refused UAC, unknown
+network scope, conflicting/stale listeners, binding changes, saved endpoint propagation
+and Docker preflight refusal. Native PowerShell fixture adds automatic-firewall
+idempotence and changed/missing listener rejection, but was not executed on Linux.
+`npm run test:ui` passed on Linux: EN/BG SQL/firewall progress text, automatic form
+host replacement, all eight pages, existing recovery controls and permanent footer.
+
+Next acceptance: clean Windows 10 and Windows 11 installations through UAC without a
+manual firewall command, repeat/resume without duplicate rules, external SQL with no
+local firewall mutation, and post-reboot address/scope changes. Mirrored/unknown WSL
+networking currently refuses automatic NAT rule creation instead of guessing a scope.

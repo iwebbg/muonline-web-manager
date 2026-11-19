@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 
-const stages = new Set(['windows', 'distribution', 'linux', 'linuxRestart', 'docker', 'keepalive', 'application', 'ready', 'uninstall']);
+const stages = new Set(['windows', 'distribution', 'linux', 'linuxRestart', 'docker', 'keepalive', 'sqlNetwork', 'application', 'ready', 'uninstall']);
 const statuses = new Set(['running', 'complete', 'failed', 'restartRequired']);
 
 /** Persist only a bounded installation draft. Bootstrap identities/passwords are excluded. */

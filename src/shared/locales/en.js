@@ -1,5 +1,6 @@
 /** Application-owned interface strings. Runtime identifiers and logs remain unchanged. */
 export default {
+  "sqlSetup.automaticHint": "For SQL Server on this computer, Install detects the local connection address and prepares a firewall rule restricted to the website environment. Approve Windows UAC when requested. Remote/cloud SQL addresses are kept unchanged.",
   "sqlSetup.detect": "Detect local SQL Server",
   "sqlSetup.use": "Use suggested address",
   "sqlSetup.hint": "For SQL Server on this Windows computer, localhost points inside the web container. Detect a reachable local SQL address after the environment is prepared, or enter your remote SQL Server address.",
@@ -36,6 +37,7 @@ export default {
   "progress.stage.linuxRestart": "Restarting the website environment…",
   "progress.stage.docker": "Installing the services needed by your website…",
   "progress.stage.keepalive": "Setting up services to stay available when the panel closes…",
+  "progress.stage.sqlNetwork": "Detecting local SQL Server and preparing its restricted firewall access…",
   "progress.stage.application": "Preparing the application, database and website administrator…",
   "progress.stage.ready": "Checking the completed installation…",
   "profile.darksteam_97d99i": "97d+99i (Tested and Works with DarksTeam 97d+99i)",
@@ -133,6 +135,7 @@ export default {
   "setup.stage.linuxRestart": "WSL distribution restart",
   "setup.stage.docker": "Docker Engine",
   "setup.stage.keepalive": "Windows keepalive task",
+  "setup.stage.sqlNetwork": "SQL connection and firewall",
   "setup.stage.application": "application setup",
   "setup.stage.ready": "ready",
 

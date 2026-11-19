@@ -237,3 +237,58 @@ test('SQL host suggestion requires measured gateway, reachable TCP and a matchin
   sql.wsl = async () => ({ ...structuredClone(wsl), probes: [{ host: '172.30.176.1', port: 1433, ok: false }] });
   assert.deepEqual(await sql.suggest(), { suggestion: null });
 });
+
+test('Install resolves loopback and owned Windows addresses, prepares a private rule, then requires WSL TCP', async () => {
+  for (const host of ['127.0.0.1', '127.0.01', 'localhost', '::1', '192.168.1.7', '172.30.176.1']) {
+    const { sql } = coordinator();
+    const requests = [];
+    sql.elevatedChange = async request => { requests.push(request); return { ok: true }; };
+    sql.wsl = async (input, addresses, networkOnly) => {
+      assert.equal(networkOnly, true);
+      assert.deepEqual(addresses, []);
+      assert.deepEqual(Object.keys(input).sort(), ['host', 'port']);
+      return { ...structuredClone(wsl), probes: [{ host: '172.30.176.1', port: 1433, ok: requests.length > 0 }] };
+    };
+    // A non-admin cannot inspect rules; the privileged helper must inspect/deduplicate them.
+    sql.windows = async () => ({ ...structuredClone(windows), firewallError: 'firewallUnavailable' });
+    const resolved = await sql.prepareInstallation(host, 1433);
+    assert.equal(resolved.host, '172.30.176.1');
+    assert.equal(resolved.instanceId, instance.id);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].installation, true);
+    assert.deepEqual(requests[0].scope, firewallScope(windows, wsl, 1433));
+    assert.match(requests[0].ruleName, /^MuOnlineSql-[a-f0-9]{16}$/);
+    assert.equal(requests[0].expected.pid, 42);
+  }
+});
+
+test('external/cloud/private remote SQL remains unchanged without a firewall mutation or WSL discovery', async () => {
+  const { sql } = coordinator();
+  sql.wsl = async () => { throw new Error('Remote SQL must not use local discovery'); };
+  sql.elevatedChange = async () => { throw new Error('Remote SQL must not change local firewall'); };
+  for (const host of ['sql.example.net', '203.0.113.5', '192.168.1.99', '10.5.2.10']) {
+    assert.deepEqual(await sql.prepareInstallation(host, 1444), { host, port: 1444, local: false });
+  }
+  sql.windows = async () => { throw new Error('Local inventory unavailable'); };
+  assert.deepEqual(await sql.prepareInstallation('sql.example.net', 1444), { host: 'sql.example.net', port: 1444, local: false });
+});
+
+test('local preparation rejects unknown/mirrored scopes, listener conflicts, changed binding and failed UAC/TCP', async () => {
+  for (const scenario of ['mirrored', 'prefix', 'listener', 'binding', 'uac', 'tcp', 'changed-listener']) {
+    const { sql } = coordinator();
+    let changes = 0;
+    sql.windows = async () => scenario === 'listener' || (scenario === 'changed-listener' && changes > 0) ? { ...windows, listeners: [{ ...windows.listeners[0], pid: 77 }] } : structuredClone(windows);
+    sql.wsl = async () => ({ ...structuredClone(wsl), ...(scenario === 'mirrored' ? { mode: 'mirrored' } : {}), ...(scenario === 'prefix' ? { addresses: [] } : {}), probes: scenario === 'changed-listener' ? [{ host: '172.30.176.1', port: 1433, ok: true }] : [] });
+    sql.elevatedChange = async () => { changes++; return { ok: scenario !== 'uac' }; };
+    await assert.rejects(sql.prepareInstallation('127.0.0.1', 1433, scenario === 'binding' ? 'MSSQL15.Other' : null));
+    assert.equal(changes, ['uac', 'tcp', 'changed-listener'].includes(scenario) ? 1 : 0);
+  }
+});
+
+test('a saved local instance binding allows rediscovering its changed gateway but never a different instance', async () => {
+  const { sql } = coordinator();
+  sql.elevatedChange = async () => ({ ok: true });
+  sql.wsl = async () => ({ ...structuredClone(wsl), probes: [{ host: '172.30.176.1', port: 1433, ok: true }] });
+  assert.equal((await sql.prepareInstallation('172.20.48.1', 1433, instance.id)).host, '172.30.176.1');
+  await assert.rejects(sql.prepareInstallation('172.20.48.1', 1433, 'MSSQL15.Other'));
+});

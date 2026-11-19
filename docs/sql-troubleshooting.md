@@ -177,3 +177,36 @@ local Windows adapter; remote SQL endpoints are never silently redirected. The I
 is discovered at runtime, not hardcoded. See [recovery](recovery.md) for backups and
 interruption boundaries. Correct temporary SQL credentials must be entered again
 for each attempt; they are never persisted in the installation journal or state.
+
+### Automatic local SQL preparation during Install / Resume
+
+The SQL host field stays editable, including for external/cloud/private-network SQL.
+Install treats only localhost/127.* (including abbreviated 127.0.01), IPv6 loopback,
+and exact addresses found on this Windows machine as local. Other addresses and
+hostnames remain unchanged; being in 192.168.* or 10.* alone is not evidence that
+an endpoint belongs to the local Windows machine. A saved local instance binding
+also permits rediscovery of that same instance after an interrupted first install.
+
+For local targets, after WSL/Docker setup and before SQL bootstrap, main verifies a
+unique running SQL instance owns the selected port on the measured Windows gateway.
+It measures the WSL private NAT subnet, then automatically requests the existing
+narrow firewall operation through UAC. Install is the authorization for this local
+preparation; the separate diagnostics Preview/Apply controls remain unchanged.
+Non-elevated firewall inventory may be incomplete: the elevated helper rechecks
+instance/PID, listener, adapter/subnet and existing rules before adding/enabling the
+one exact rule. No SQL credentials enter its request or temporary files. Existing
+exact manager/manual rules are reused; unrelated or stale rules are not deleted.
+It does not enable TCP, change SQL ports/Mixed Mode, restart SQL or disable firewall.
+
+Main rechecks the measured scope, instance and WSL TCP after elevation. Only then
+is the detected endpoint saved in the public draft and reflected in the form. The
+worker separately tests TCP from a one-shot application container after its image
+build and before passing bootstrap credentials. Failure at either boundary stops
+SQL provisioning. Mirrored/unknown networking, ambiguous SQL instances/listeners,
+UAC refusal and blocked effective policy require diagnostics; no broad rule or
+unverified endpoint fallback is attempted.
+
+The detected gateway is the Windows SQL endpoint reachable from WSL/Docker, not
+Docker's bridge/container IP. Gateway addresses are never hardcoded. This behavior
+requires native Win10/Win11 acceptance, including firewall idempotence and reboot
+network changes; passing mocked tests is not Windows integration verification.

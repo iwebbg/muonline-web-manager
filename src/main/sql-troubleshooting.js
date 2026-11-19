@@ -105,6 +105,49 @@ export class SqlTroubleshooter {
     } catch { return { suggestion: null }; }
   }
 
+  /** Installation owns this local-only preparation; remote SQL never receives a local rule. */
+  async prepareInstallation(host, port = 1433, expectedInstanceId = null) {
+    host = String(host ?? '').trim();
+    port = Number(port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid SQL port.');
+    const loopback = !host || ['localhost', '::1', '[::1]'].includes(host.toLowerCase()) || /^127\./.test(host);
+    let windows;
+    try { windows = await this.windows('', [], port); } catch (error) {
+      if (!loopback && !expectedInstanceId) return { host, port, local: false };
+      throw error;
+    }
+    const owned = (windows.addresses ?? []).some(address => address.address === host);
+    if (!loopback && !owned && !expectedInstanceId) return { host, port, local: false };
+    const network = await this.wsl({ host: '', port }, [], true);
+    const scope = firewallScope(windows, network, port);
+    const matches = (windows.instances ?? []).filter(instance => instance.state === 'Running' && instance.tcp?.enabled === true
+      && (!expectedInstanceId || instance.id === expectedInstanceId)
+      && Number.isInteger(instance.pid) && instance.pid > 0
+      && (windows.listeners ?? []).some(listener => listener.pid === instance.pid && listener.port === port
+        && ['0.0.0.0', '::', scope.localAddress].includes(listener.address)));
+    if (windows.listenerError || matches.length !== 1 || (windows.listeners ?? []).some(listener => listener.port === port && listener.pid !== matches[0]?.pid)) {
+      throw new Error('A unique local SQL Server listener could not be verified. Check SQL Troubleshooting and the SQL port.');
+    }
+    const instance = matches[0];
+    const ruleName = 'MuOnlineSql-' + createHash('sha256').update(JSON.stringify({ instance: instance.id, localAddress: scope.localAddress, remoteAddress: scope.remoteAddress, port })).digest('hex').slice(0, 16);
+    // Firewall inventory may require elevation. The elevated script inspects and
+    // deduplicates exact rules itself and revalidates the listener and measured adapter.
+    const response = await this.elevatedChange({ operation: 'change', action: 'firewall', confirmed: true,
+      installation: true, instance: instance.name, port, scope, ruleName, expected: instance });
+    if (response.ok !== true) throw new Error('Local SQL firewall preparation failed. Check UAC permissions and SQL Troubleshooting.');
+    const after = await this.wsl({ host: scope.localAddress, port }, [], true);
+    const refreshedWindows = await this.windows('', [], port);
+    const currentScope = firewallScope(refreshedWindows, after, port);
+    const sameInstance = (refreshedWindows.instances ?? []).some(item => item.id === instance.id && item.pid === instance.pid && item.state === 'Running');
+    const sameListener = !refreshedWindows.listenerError && (refreshedWindows.listeners ?? []).some(item => item.pid === instance.pid && item.port === port && ['0.0.0.0', '::', scope.localAddress].includes(item.address))
+      && !(refreshedWindows.listeners ?? []).some(item => item.port === port && item.pid !== instance.pid);
+    if (!sameInstance || !sameListener || currentScope.localAddress !== scope.localAddress || currentScope.remoteAddress !== scope.remoteAddress
+      || !(after.probes ?? []).some(probe => probe.host === scope.localAddress && probe.port === port && probe.ok === true)) {
+      throw new Error('Local SQL Server is still unreachable after firewall setup. Check SQL Troubleshooting.');
+    }
+    return { host: scope.localAddress, port, local: true, instanceId: instance.id, localAddresses: (windows.addresses ?? []).map(address => address.address) };
+  }
+
   /** Run independent Windows, WSL and real-container-network checks and return safe facts. */
   async diagnose(input) {
     const target = validateSqlInput(input);
@@ -221,6 +264,12 @@ export class SqlTroubleshooter {
     if (!current || changeFingerprint(current, scope) !== stored.fingerprint) {
       throw new Error('SQL configuration or WSL addresses changed. Retest and prepare a new preview.');
     }
+    const response = await this.elevatedChange({ operation: 'change', action: plan.action, confirmed: true, instance: plan.instance, port: plan.port, section: plan.section, scope: plan.scope, ruleName: stored.ruleName, expected: stored.expected, expectedSection: stored.expectedSection });
+    return { applied: response.ok === true, reason: response.code, changed: response.changed === true };
+  }
+
+  /** Elevate only a main-owned, credential-free structured change using packaged code. */
+  async elevatedChange(change) {
     await mkdir(this.userData, { recursive: true });
     const folder = await mkdtemp(path.join(this.userData, 'sql-action-'));
     try {
@@ -228,10 +277,10 @@ export class SqlTroubleshooter {
       const request = path.join(folder, 'request.json');
       const result = path.join(folder, 'result.json');
       await writeFile(script, await readFile(path.join(this.resources, 'runtime/sql-windows.ps1')));
-      await writeFile(request, JSON.stringify({ operation: 'change', action: plan.action, confirmed: true, instance: plan.instance, port: plan.port, section: plan.section, scope: plan.scope, ruleName: stored.ruleName, expected: stored.expected, expectedSection: stored.expectedSection }), { mode: 0o600 });
+      await writeFile(request, JSON.stringify(change), { mode: 0o600 });
       await this.runner('powershell.exe', encodedPowerShell(ELEVATE), JSON.stringify({ script, request, result }), 120000);
       const response = JSON.parse(await readFile(result, 'utf8'));
-      return { applied: response.ok === true, reason: response.code, changed: response.changed === true };
+      return response;
     } finally {
       await rm(folder, { recursive: true, force: true });
     }

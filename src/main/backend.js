@@ -295,21 +295,43 @@ exit 0
     await this.ensureEnvironment();
     let result;
     let bootstrapAttempted = false;
+    let resolvedSqlEndpoint;
     try {
       result = await this.setup.run('application', async () => {
         const state = await this.runtime({ action: 'status' });
-        if (state.installed) {
-          if (state.phase === 'ready') return 'Installation is already complete.';
-          if (!['bootstrap-pending', 'runtime-bootstrapped', 'administrator-created'].includes(state.phase)) {
-            throw new Error('Installation requires manual recovery. Consult the recovery guide.');
-          }
-          bootstrapAttempted = state.phase === 'bootstrap-pending';
-          return this.runtime({ action: 'resumeInstall', settings: request.settings });
+        if (state.installed && state.phase === 'ready') return 'Installation is already complete.';
+        if (state.installed && !['bootstrap-pending', 'runtime-bootstrapped', 'administrator-created'].includes(state.phase)) {
+          throw new Error('Installation requires manual recovery. Consult the recovery guide.');
         }
-        bootstrapAttempted = true;
-        return this.deploy('install', request);
+        const pending = !state.installed || state.phase === 'bootstrap-pending';
+        delete request.settings.localSqlInstanceId; // Binding is main-owned, never a renderer claim.
+        if (pending && typeof request.settings.sqlHost === 'string') {
+          const original = state.bootstrapSqlEndpoint;
+          const expectedId = original && request.settings.sqlHost === original.host ? state.localSqlInstanceId : null;
+          const prepared = await this.setup.run('sqlNetwork', () => this.sql.prepareInstallation(request.settings.sqlHost, request.settings.sqlPort ?? 1433, expectedId));
+          if (prepared.local) {
+            resolvedSqlEndpoint = { host: prepared.host, port: prepared.port };
+            request.settings.sqlHost = prepared.host;
+            request.settings.sqlPort = String(prepared.port);
+            request.settings.localSqlInstanceId = prepared.instanceId;
+            // Automatic repair is restricted to endpoints proven local to this Windows
+            // machine or the same previously bound instance. A remote target still needs
+            // the existing explicit same-server repair confirmation.
+            if (original && (expectedId || /^127\./.test(original.host) || ['localhost', '::1'].includes(original.host.toLowerCase()) || prepared.localAddresses.includes(original.host))) {
+              request.settings.sqlEndpointChange = { confirmed: true, expected: original };
+            }
+            await this.setup.saveDraft({ sqlHost: prepared.host, sqlPort: String(prepared.port) });
+            await this.activeLog?.append('Automatic local SQL endpoint: ' + JSON.stringify(resolvedSqlEndpoint));
+          }
+        }
+        const provision = () => {
+          bootstrapAttempted = pending;
+          return state.installed ? this.runtime({ action: 'resumeInstall', settings: request.settings }) : this.deploy('install', request);
+        };
+        return pending && typeof request.settings.sqlHost === 'string' ? this.setup.run('application', provision) : provision();
       });
     } catch (error) {
+      if (resolvedSqlEndpoint) error.sqlResolvedEndpoint = resolvedSqlEndpoint;
       if (bootstrapAttempted) try {
         const current = await this.runtime({ action: 'status' });
         if (current.phase === 'bootstrap-pending') error.bootstrapSqlEndpoint = current.bootstrapSqlEndpoint;
@@ -325,7 +347,7 @@ exit 0
       const state = await this.runtime({ action: 'status' });
       if (!state.installed || state.phase !== 'ready') throw new Error('Installation has not reached the ready phase. Retry Install to continue.');
     });
-    return result;
+    return resolvedSqlEndpoint ? { message: result, sqlResolvedEndpoint: resolvedSqlEndpoint } : result;
   }
 
   /** Install Docker from its official Ubuntu repository, then register a user logon keepalive task. */

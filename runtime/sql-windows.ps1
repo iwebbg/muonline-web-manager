@@ -184,12 +184,19 @@ function Invoke-Change($request) {
     }
     if ($request.action -eq 'firewall') {
         Assert-PrivateScope $request.scope
+        if ($request.installation -eq $true) {
+            if ($instance.state -ne 'Running' -or -not $instance.tcp.enabled -or $instance.pid -ne $request.expected.pid) { throw 'SQL listener changed' }
+            $listeners = @(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object { $_.LocalPort -eq $port -and $_.OwningProcess -eq $instance.pid -and $_.LocalAddress -in @('0.0.0.0','::',[string]$request.scope.localAddress) })
+            if ($listeners.Count -eq 0) { throw 'SQL listener missing' }
+        }
         if ([string]$request.ruleName -notmatch '^MuOnlineSql-[a-f0-9]{16}$') { throw 'Invalid rule name' }
         $existing = @(Get-NetFirewallRule -Name $request.ruleName -ErrorAction SilentlyContinue)
         if ($existing.Count -gt 0) {
             $addresses = $existing[0] | Get-NetFirewallAddressFilter
             $ports = $existing[0] | Get-NetFirewallPortFilter
-            if ([string]$existing[0].Group -ne 'MuOnline Web Manager SQL' -or ($addresses.LocalAddress -join ',') -ne $request.scope.localAddress -or ($addresses.RemoteAddress -join ',') -ne $request.scope.remoteAddress -or ($ports.LocalPort -join ',') -ne [string]$port -or [string]$existing[0].Action -ne 'Allow' -or [string]$existing[0].Direction -ne 'Inbound' -or [string]$ports.Protocol -notin @('TCP','6')) { throw 'Existing rule mismatch' }
+            $application = $existing[0] | Get-NetFirewallApplicationFilter
+            $serviceFilter = $existing[0] | Get-NetFirewallServiceFilter
+            if ([string]$existing[0].Profile -ne 'Any' -or [string]$application.Program -ne 'Any' -or [string]$serviceFilter.Service -ne 'Any' -or [string]$existing[0].Group -ne 'MuOnline Web Manager SQL' -or ($addresses.LocalAddress -join ',') -ne $request.scope.localAddress -or ($addresses.RemoteAddress -join ',') -ne $request.scope.remoteAddress -or ($ports.LocalPort -join ',') -ne [string]$port -or [string]$existing[0].Action -ne 'Allow' -or [string]$existing[0].Direction -ne 'Inbound' -or [string]$ports.Protocol -notin @('TCP','6')) { throw 'Existing rule mismatch' }
             $changed = [string]$existing[0].Enabled -ne 'True'
             if ($changed) { Enable-NetFirewallRule -Name $request.ruleName | Out-Null }
             return @{ok=$true; code='firewallExists'; changed=$changed}

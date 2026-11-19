@@ -62,6 +62,10 @@ async function smoke() {
     }
     if (action === 'setupStatus' && heldSetupStage) return { ok: true, result: { schema: 1, stage: heldSetupStage, status: 'running', completed: [] } };
     if (action === 'sqlSuggest') return { ok: true, result: { suggestion: { host: '172.20.48.1', port: 1433, instance: 'SQLEXPRESS' } } };
+    if (action === 'resumeInstall' && bootstrapMode === 'automatic') {
+      bootstrapMode = null;
+      return { ok: true, result: { message: 'Complete', sqlResolvedEndpoint: { host: '172.25.160.1', port: 1433 } } };
+    }
     if (action === 'resumeInstall' && bootstrapMode) {
       if (bootstrapMode === 'first') {
         runtimePhase = 'bootstrap-pending';
@@ -361,6 +365,9 @@ async function smoke() {
     heldSetupStage = 'docker';
     const nextStep = locale === 'en' ? 'Installing the services needed by your website…' : 'Инсталиране на услугите, необходими за сайта…';
     await window.webContents.executeJavaScript(`new Promise(resolve => { const timer=setInterval(()=>{if(document.querySelector('#progressStep').textContent === ${JSON.stringify(nextStep)}){clearInterval(timer);resolve();}},10); })`);
+    heldSetupStage = 'sqlNetwork';
+    const sqlStep = locale === 'en' ? 'Detecting local SQL Server and preparing its restricted firewall access…' : 'Откриване на локалния SQL Server и настройване на ограничен firewall достъп…';
+    await window.webContents.executeJavaScript(`new Promise(resolve => { const timer=setInterval(()=>{if(document.querySelector('#progressStep').textContent === ${JSON.stringify(sqlStep)}){clearInterval(timer);resolve();}},10); })`);
     await fs.writeFile(`artifacts/review/progress-${locale}.png`, (await window.webContents.capturePage()).toPNG());
     heldSetupStage = null;
     heldAction = null;
@@ -409,6 +416,10 @@ async function smoke() {
   assert.equal(operations.filter(op => op.action === 'resumeInstall').length, resumesBefore + 1);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="sqlPassword"]').value`), '');
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#sqlEndpointConfirmation').hidden`), true);
+  bootstrapMode = 'automatic';
+  await window.webContents.executeJavaScript(`document.querySelector('[name="sqlHost"]').value='127.0.0.1'; document.querySelector('#resumeInstall').click();`);
+  await idle();
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="sqlHost"]').value`), '172.25.160.1', 'The automatically detected endpoint replaces the local input');
   await window.webContents.executeJavaScript(`document.querySelector('[data-page="install"]').click(); document.querySelector('.uninstall-panel').open=true; document.querySelector('#uninstallName').value='Personal-Linux'; document.querySelector('#uninstallConfirm').checked=true; document.querySelector('#uninstallForm').dispatchEvent(new Event('input'));`);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallButton').disabled`), true);
   await window.webContents.executeJavaScript(`document.querySelector('#uninstallName').value='MuOnline-Dev'; document.querySelector('#uninstallForm').dispatchEvent(new Event('input'));`);

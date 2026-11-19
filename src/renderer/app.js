@@ -68,6 +68,14 @@ async function refreshSetupStatus() {
     settings.setup = response.result;
     progress.setup(response.result);
     renderSetupProgress();
+    if (busy && ['install', 'resumeInstall'].includes(lastAction) && response.result.completed?.includes('sqlNetwork')) {
+      const form = document.querySelector('#installForm');
+      const draft = response.result.configuration;
+      if (form && draft?.sqlHost) {
+        form.elements.sqlHost.value = draft.sqlHost;
+        form.elements.sqlPort.value = draft.sqlPort ?? '1433';
+      }
+    }
   }
 }
 
@@ -165,7 +173,7 @@ function render() {
     sql: sqlPage(t),
     support: supportPage(t),
     overview: `<h1>${t('overviewTitle')}</h1><p class="lead">${t('overviewLead')}</p><div class="actions website-links"><button type="button" class="primary" data-action="openWebsite" disabled>${t('openWebsite')} ↗</button><button type="button" data-action="openAdmin" disabled>${t('openAdmin')} ↗</button></div><p id="websiteLinksHint" class="hint">${t('websiteLinksHint')}</p><div class="cards"><div class="card"><small>${t('webApplicationLabel')}</small><strong id="webVersion">${t('unchecked')}</strong><p>${t('webVersionHint')}</p></div><div class="card"><small>${t('accessLabel')}</small><strong id="accessMode">${t('unchecked')}</strong><p id="siteUrl">localhost / IP / Domain + SSL</p></div><div class="card"><small>${t('managerLabel')}</small><strong id="managerVersion">0.1.0</strong><p>${t('managerDescription')}</p></div></div>${servicesPanel(t)}`,
-    install: `<h1>${t('installTitle')}</h1><p class="lead">${t('installLead')}</p><p id="installRelease" class="hint"></p><form id="installForm"><h2>${t('sqlTitle')}</h2><div class="grid"><label>${t('sqlHost')}<input name="sqlHost" required placeholder="192.168.1.10"></label><label>${t('sqlPort')}<input name="sqlPort" type="number" min="1" max="65535" value="1433" required></label><label>${t('sqlAdmin')}<input name="sqlAdmin" value="sa" required autocomplete="off"></label><label>${t('sqlPassword')}<input name="sqlPassword" type="password" required autocomplete="off"></label><label>${t('profile')}<select name="profile" id="profiles" required></select></label><label>${t('appEnv')}<select name="appEnv"><option value="local">local</option><option value="production">production</option></select></label><label>${t('gameDatabase')}<input name="gameDatabase" value="MuOnline" required></label><label>${t('webDatabase')}<input name="webDatabase" value="MuOnline_Web" required></label><label>${t('appLogin')}<input name="appLogin" value="muonline_web_app" required></label><label>${t('gameLogin')}<input name="gameLogin" value="muonline_web_user" required></label></div><p class="hint">${t('sqlSetup.temporary')}</p><div class="actions"><button type="button" id="detectSqlHost">${t('sqlSetup.detect')}</button><button type="button" id="useSqlHost" hidden>${t('sqlSetup.use')}</button></div><p class="hint" id="sqlEndpointHint"></p><p class="warning" id="savedSqlEndpoint" hidden></p><label class="check" id="sqlEndpointConfirmation" hidden><input name="confirmSqlEndpoint" type="checkbox">${t('sqlSetup.confirm')}</label><label class="check"><input name="trustCertificate" type="checkbox" checked>${t('trustCertificate')}</label><p class="hint">${t('passwordHint')}</p><fieldset><legend>${t('access')}</legend>${accessFields()}</fieldset><fieldset><legend>${t('firstAdmin')}</legend>${adminFields()}</fieldset><div class="actions"><button class="primary" type="submit">${t('install')}</button><button type="button" id="resumeInstall">${t('resumeInstall')}</button></div><p class="hint">${t('resumeHint')}</p></form><details class="panel install-helpers"><summary>${t('install.helpers')}</summary><p class="hint">${t('install.helpersHint')}</p><div class="actions"><button data-action="prerequisites">${t('prerequisites')}</button><button data-action="installWsl">${t('installWsl')}</button><button data-action="installDocker">${t('installDocker')}</button><button type="button" id="openSqlTroubleshooting">${t('sql.title')}</button></div> <div class="warning">${t('dockerWarning')}</div><p id="linuxAccess" class="hint"></p><button type="button" data-action="openLogs">${t('logs.open')}</button></details><details class="panel uninstall-panel"><summary>${t('uninstall.title')}</summary><p class="warning">${t('uninstall.warning', { distribution: settings.distribution ?? 'Ubuntu-24.04' })}</p><button type="button" data-action="status">${t('checkStatus')}</button><p id="uninstallTarget" class="hint"></p><button type="button" id="uninstallBackup">${t('uninstall.backup')}</button><form id="uninstallForm"><div id="uninstallSqlFields"><label>${t('sqlAdmin')}<input id="uninstallSqlAdmin" autocomplete="off" maxlength="128"></label><label>${t('sqlPassword')}<input id="uninstallSqlPassword" type="password" autocomplete="off" maxlength="4096"></label><label class="check"><input id="uninstallSqlConfirm" type="checkbox">${t('uninstall.sqlConfirm')}</label></div><label>${t('uninstall.typeName', { distribution: settings.distribution ?? 'Ubuntu-24.04' })}<input id="uninstallName" autocomplete="off" spellcheck="false"></label><label class="check"><input id="uninstallConfirm" type="checkbox">${t('uninstall.confirm')}</label><button class="danger" id="uninstallButton" type="submit" disabled>${t('uninstall.title')}</button></form></details>`,
+    install: `<h1>${t('installTitle')}</h1><p class="lead">${t('installLead')}</p><p id="installRelease" class="hint"></p><form id="installForm"><h2>${t('sqlTitle')}</h2><div class="grid"><label>${t('sqlHost')}<input name="sqlHost" required value="127.0.0.1" placeholder="192.168.1.10"></label><label>${t('sqlPort')}<input name="sqlPort" type="number" min="1" max="65535" value="1433" required></label><label>${t('sqlAdmin')}<input name="sqlAdmin" value="sa" required autocomplete="off"></label><label>${t('sqlPassword')}<input name="sqlPassword" type="password" required autocomplete="off"></label><label>${t('profile')}<select name="profile" id="profiles" required></select></label><label>${t('appEnv')}<select name="appEnv"><option value="local">local</option><option value="production">production</option></select></label><label>${t('gameDatabase')}<input name="gameDatabase" value="MuOnline" required></label><label>${t('webDatabase')}<input name="webDatabase" value="MuOnline_Web" required></label><label>${t('appLogin')}<input name="appLogin" value="muonline_web_app" required></label><label>${t('gameLogin')}<input name="gameLogin" value="muonline_web_user" required></label></div><p class="hint">${t('sqlSetup.automaticHint')}</p><p class="hint">${t('sqlSetup.temporary')}</p><div class="actions"><button type="button" id="detectSqlHost">${t('sqlSetup.detect')}</button><button type="button" id="useSqlHost" hidden>${t('sqlSetup.use')}</button></div><p class="hint" id="sqlEndpointHint"></p><p class="warning" id="savedSqlEndpoint" hidden></p><label class="check" id="sqlEndpointConfirmation" hidden><input name="confirmSqlEndpoint" type="checkbox">${t('sqlSetup.confirm')}</label><label class="check"><input name="trustCertificate" type="checkbox" checked>${t('trustCertificate')}</label><p class="hint">${t('passwordHint')}</p><fieldset><legend>${t('access')}</legend>${accessFields()}</fieldset><fieldset><legend>${t('firstAdmin')}</legend>${adminFields()}</fieldset><div class="actions"><button class="primary" type="submit">${t('install')}</button><button type="button" id="resumeInstall">${t('resumeInstall')}</button></div><p class="hint">${t('resumeHint')}</p></form><details class="panel install-helpers"><summary>${t('install.helpers')}</summary><p class="hint">${t('install.helpersHint')}</p><div class="actions"><button data-action="prerequisites">${t('prerequisites')}</button><button data-action="installWsl">${t('installWsl')}</button><button data-action="installDocker">${t('installDocker')}</button><button type="button" id="openSqlTroubleshooting">${t('sql.title')}</button></div> <div class="warning">${t('dockerWarning')}</div><p id="linuxAccess" class="hint"></p><button type="button" data-action="openLogs">${t('logs.open')}</button></details><details class="panel uninstall-panel"><summary>${t('uninstall.title')}</summary><p class="warning">${t('uninstall.warning', { distribution: settings.distribution ?? 'Ubuntu-24.04' })}</p><button type="button" data-action="status">${t('checkStatus')}</button><p id="uninstallTarget" class="hint"></p><button type="button" id="uninstallBackup">${t('uninstall.backup')}</button><form id="uninstallForm"><div id="uninstallSqlFields"><label>${t('sqlAdmin')}<input id="uninstallSqlAdmin" autocomplete="off" maxlength="128"></label><label>${t('sqlPassword')}<input id="uninstallSqlPassword" type="password" autocomplete="off" maxlength="4096"></label><label class="check"><input id="uninstallSqlConfirm" type="checkbox">${t('uninstall.sqlConfirm')}</label></div><label>${t('uninstall.typeName', { distribution: settings.distribution ?? 'Ubuntu-24.04' })}<input id="uninstallName" autocomplete="off" spellcheck="false"></label><label class="check"><input id="uninstallConfirm" type="checkbox">${t('uninstall.confirm')}</label><button class="danger" id="uninstallButton" type="submit" disabled>${t('uninstall.title')}</button></form></details>`,
     access: `<h1>${t('accessTitle')}</h1><p class="lead">${t('accessLead')}</p><form id="accessForm">${accessFields()}<div class="warning">${t('accessWarning')}</div><button class="primary" type="submit">${t('applyAccess')}</button></form>`,
     admins: administratorsPage(t, adminFields()),
     backup: `<h1>${t('backupTitle')}</h1><p class="lead">${t('backupLead')}</p><form id="backupForm">${backupFields()}<button class="primary" type="submit">${t('createBackup')}</button></form><p class="hint">${t('backupHint')}</p>`,
@@ -313,6 +321,14 @@ function administratorInput(data) {
   return { name: data.get('adminName'), email: data.get('adminEmail'), password: data.get('adminPassword') };
 }
 
+function receiveSqlEndpoint(endpoint) {
+  const form = document.querySelector('#installForm');
+  if (form && endpoint && typeof endpoint.host === 'string' && Number.isInteger(endpoint.port)) {
+    form.elements.sqlHost.value = endpoint.host;
+    form.elements.sqlPort.value = endpoint.port;
+  }
+}
+
 function installationInput(data) {
   const values = Object.fromEntries(data.entries());
   values.trustCertificate = data.has('trustCertificate');
@@ -358,10 +374,11 @@ async function perform(action, input = {}, quiet = false) {
     }
     const response = await window.manager.invoke(action, input);
     if (!response.ok) {
-      throw Object.assign(new Error(response.error), { logFile: response.logFile, logUnavailable: response.logUnavailable, sqlSuggestion: response.sqlSuggestion, bootstrapSqlEndpoint: response.bootstrapSqlEndpoint });
+      throw Object.assign(new Error(response.error), { logFile: response.logFile, logUnavailable: response.logUnavailable, sqlSuggestion: response.sqlSuggestion, sqlResolvedEndpoint: response.sqlResolvedEndpoint, bootstrapSqlEndpoint: response.bootstrapSqlEndpoint });
     }
     const result = response.result;
     operationResult = result;
+    if (['install', 'resumeInstall'].includes(action)) receiveSqlEndpoint(result?.sqlResolvedEndpoint);
     if (['adminList', 'adminUpdate', 'adminDelete'].includes(action) && result?.code) operationFailed = true;
     if (['adminList', 'adminUpdate', 'adminDelete'].includes(action)) {
       receiveAdministrators(action, result);
@@ -425,6 +442,7 @@ async function perform(action, input = {}, quiet = false) {
   } catch (error) {
     operationFailed = true;
     if (['install', 'resumeInstall'].includes(action)) {
+      receiveSqlEndpoint(error.sqlResolvedEndpoint);
       if (error.bootstrapSqlEndpoint) status = { ...status, installed: true, phase: 'bootstrap-pending', bootstrapSqlEndpoint: error.bootstrapSqlEndpoint };
       localSqlSuggestion = error.sqlSuggestion ?? null;
     }

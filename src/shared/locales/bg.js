@@ -1,5 +1,6 @@
 /** Application-owned interface strings. Runtime identifiers and logs remain unchanged. */
 export default {
+  "sqlSetup.automaticHint": "За SQL Server на този компютър инсталацията открива адреса и подготвя firewall правило, ограничено до средата на сайта. Потвърди Windows UAC при поискване. Външните/cloud SQL адреси се запазват без промяна.",
   "sqlSetup.detect": "Открий локален SQL Server",
   "sqlSetup.use": "Използвай предложения адрес",
   "sqlSetup.hint": "При SQL Server на този Windows компютър localhost сочи вътре в web контейнера. След подготовка на средата открий достъпен локален SQL адрес или въведи адреса на отдалечения SQL Server.",
@@ -36,6 +37,7 @@ export default {
   "progress.stage.linuxRestart": "Рестартиране на средата за сайта…",
   "progress.stage.docker": "Инсталиране на услугите, необходими за сайта…",
   "progress.stage.keepalive": "Настройване на услугите да работят при затворен панел…",
+  "progress.stage.sqlNetwork": "Откриване на локалния SQL Server и настройване на ограничен firewall достъп…",
   "progress.stage.application": "Подготовка на приложението, базата и администратора на сайта…",
   "progress.stage.ready": "Проверка на завършената инсталация…",
   "profile.darksteam_97d99i": "97d+99i (Тестван и работи с DarksTeam 97d+99i)",
@@ -133,6 +135,7 @@ export default {
   "setup.stage.linuxRestart": "рестартиране на WSL дистрибуцията",
   "setup.stage.docker": "Docker Engine",
   "setup.stage.keepalive": "Windows задача за работа във фонов режим",
+  "setup.stage.sqlNetwork": "SQL връзка и firewall",
   "setup.stage.application": "настройка на приложението",
   "setup.stage.ready": "готово",
 

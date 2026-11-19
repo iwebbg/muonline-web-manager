@@ -126,3 +126,31 @@ class BootstrapEndpointTests(unittest.TestCase):
         self.assertIn('correct-private-password', observed[1])
         self.assertNotIn('wrong-private-password', observed[1])
         self.assertNotIn('correct-private-password', worker.STATE.read_text())
+
+    def test_local_install_requires_actual_docker_tcp_before_sql_bootstrap(self):
+        self.state['localSqlInstanceId'] = 'MSSQL15.SQLEXPRESS'
+        self.state['environment']['DB_HOST'] = '172.20.48.1'
+        calls = []
+        def compose(*args, **kwargs):
+            calls.append(args)
+            if kwargs.get('return_process'):
+                self.assertEqual(json.loads(kwargs['data']), {'host': '172.20.48.1', 'port': 1433})
+                self.assertNotIn('private-secret', kwargs['data'])
+                return subprocess.CompletedProcess([], 1, '', '')
+            return ''
+        with patch.object(worker, 'write_configuration'), patch.object(worker, 'compose', side_effect=compose):
+            with self.assertRaisesRegex(ValueError, 'not reachable from Docker'):
+                worker.finish_install(self.state, {'sqlAdmin': 'temporary-admin', 'sqlPassword': 'private-secret'})
+        self.assertTrue(any(worker.SQL_ENDPOINT_PROBE in args for args in calls))
+        self.assertFalse(any('--env-from-file' in args for args in calls))
+        self.assertEqual(self.state['environment']['APP_KEY'], 'keep-key')
+        self.assertEqual(self.state['environment']['DB_PASSWORD'], 'keep-runtime-password')
+
+    def test_local_instance_binding_cannot_be_changed_or_silently_converted_to_remote(self):
+        self.state['localSqlInstanceId'] = 'MSSQL15.SQLEXPRESS'
+        for credentials in [dict(self.settings, localSqlInstanceId='MSSQL15.Other'),
+                            dict(self.settings, sqlHost='cloud.example.test')]:
+            with patch.object(worker, 'compose') as compose:
+                with self.assertRaisesRegex(ValueError, 'Local SQL instance changed'):
+                    worker.finish_install(self.state, credentials)
+                compose.assert_not_called()

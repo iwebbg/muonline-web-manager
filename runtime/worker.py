@@ -796,6 +796,9 @@ def install(request):
     require(values['appEnv'] in ('local', 'production'), 'Invalid APP_ENV.')
     require(values['profile'] in request['release']['profiles'], 'Choose a profile from the release registry.')
     state = {'version': request['release']['version'], 'access': access_settings(values['access']), 'environment': {}}
+    if values.get('localSqlInstanceId'):
+        require(re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', values['localSqlInstanceId']), 'Invalid local SQL instance binding.')
+        state['localSqlInstanceId'] = values['localSqlInstanceId']
     environment = state['environment']
     environment.update(
         APP_NAME='MuOnline Web',
@@ -852,11 +855,24 @@ def finish_install(state, credentials):
     phase = state.get('phase', 'bootstrap-pending')
     require(phase in ('bootstrap-pending', 'runtime-bootstrapped', 'administrator-created'), 'Only incomplete first installations can be resumed.')
     state['phase'] = phase
+    binding = credentials.get('localSqlInstanceId')
+    if state.get('localSqlInstanceId') and not binding and credentials.get('sqlHost'):
+        require(credentials['sqlHost'] == state['environment']['DB_HOST'] and str(credentials.get('sqlPort', state['environment']['DB_PORT'])) == str(state['environment']['DB_PORT']), 'Local SQL instance changed. Use SQL Troubleshooting before retrying.')
+    if binding:
+        require(re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', binding) and state.get('localSqlInstanceId', binding) == binding, 'Local SQL instance changed. Use SQL Troubleshooting before retrying.')
     repair_bootstrap_endpoint(state, credentials)
+    if binding:
+        state['localSqlInstanceId'] = binding
+        save_state(state)
     write_configuration(state)
     compose('build', 'app')
     compose('up', '-d', '--wait', 'redis')
     if phase == 'bootstrap-pending':
+        if state.get('localSqlInstanceId'):
+            endpoint = bootstrap_sql_endpoint(state)
+            result = compose('run', '--rm', '--no-deps', '-T', '--entrypoint', 'php', 'app', '-r', SQL_ENDPOINT_PROBE,
+                             data=json.dumps({'host': endpoint['host'], 'port': endpoint['port']}), allow_failure=True, return_process=True)
+            require(result.returncode == 0, 'Local SQL Server is not reachable from Docker. Check SQL Troubleshooting before retrying.')
         bootstrap = dict(state['environment'], APP_DB_BOOTSTRAP='true', APP_DB_ADMIN_USERNAME=single_line(credentials['sqlAdmin']), APP_DB_ADMIN_PASSWORD=single_line(credentials['sqlPassword'], 1024))
         descriptor, filename = tempfile.mkstemp(prefix='muonline-bootstrap-', dir='/dev/shm')
         try:
@@ -1173,7 +1189,7 @@ def dispatch(request):
         except RuntimeError as exception:
             services = '[]'
             error = str(exception)
-        return {'installed': True, 'version': state['version'], 'phase': state.get('phase'), 'access': state['access'], 'gameWrites': game_write_mode(), 'services': services, 'runtimeError': error, 'uninstallTarget': uninstall_target(state), 'bootstrapSqlEndpoint': bootstrap_sql_endpoint(state) if state.get('phase') == 'bootstrap-pending' else None}
+        return {'installed': True, 'version': state['version'], 'phase': state.get('phase'), 'access': state['access'], 'gameWrites': game_write_mode(), 'services': services, 'runtimeError': error, 'uninstallTarget': uninstall_target(state), 'bootstrapSqlEndpoint': bootstrap_sql_endpoint(state) if state.get('phase') == 'bootstrap-pending' else None, 'localSqlInstanceId': state.get('localSqlInstanceId')}
     state = load_state()
     if action == 'setGameWrites':
         return apply_game_writes(state, request.get('gameWrites'))

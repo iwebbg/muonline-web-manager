@@ -2,6 +2,12 @@ import { resolveLocale, translate } from './i18n.js';
 
 /** Known application messages only. Arbitrary logs and SQL diagnostics are not translated. */
 const bulgarian = {
+  "A unique local SQL Server listener could not be verified. Check SQL Troubleshooting and the SQL port.": "Не може да се потвърди еднозначно локалният SQL Server. Провери SQL Troubleshooting и SQL порта.",
+  "Local SQL firewall preparation failed. Check UAC permissions and SQL Troubleshooting.": "Настройката на локалното SQL firewall правило е неуспешна. Провери UAC правата и SQL Troubleshooting.",
+  "Local SQL Server is still unreachable after firewall setup. Check SQL Troubleshooting.": "Локалният SQL Server остава недостъпен след firewall настройката. Провери SQL Troubleshooting.",
+  "Local SQL Server is not reachable from Docker. Check SQL Troubleshooting before retrying.": "Локалният SQL Server е недостъпен от Docker. Провери SQL Troubleshooting преди нов опит.",
+  "Local SQL instance changed. Use SQL Troubleshooting before retrying.": "Локалният SQL instance е променен. Провери SQL Troubleshooting преди нов опит.",
+  "Invalid local SQL instance binding.": "Невалидна връзка с локалния SQL instance.",
   "Windows WSL preparation failed. Open support logs for the failed setup stage, then retry Install.": "Подготовката на Windows WSL е неуспешна. Отвори support логовете за точната стъпка на отказа, после опитай Инсталирай отново.",
   "SQL host points to the web container. Use the Windows SQL Server address.": "SQL адресът сочи към web контейнера. Използвай адреса на Windows SQL Server.",
   "Resume cannot change databases, logins or game profile. Restore the original installation fields.": "Продължаването не може да променя бази, logins или game профил. Възстанови първоначалните стойности на тези полета.",
