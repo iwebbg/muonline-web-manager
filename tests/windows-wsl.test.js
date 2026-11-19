@@ -141,6 +141,7 @@ test('PowerShell elevation wrapper handles quoted Unicode paths and transports t
   const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-elevation-contract-'));
   const resources = path.join(directory, 'MuOnline Web Manager', 'Файлове');
   const logged = [];
+  let scenario = 'reported-failure';
   const backend = new Backend(resources, directory, undefined, 'en', undefined, async (file, args, input) => {
     if (file === 'wsl.exe') throw new Error('Fixture legacy WSL');
     assert.equal(file, 'powershell.exe');
@@ -148,10 +149,14 @@ test('PowerShell elevation wrapper handles quoted Unicode paths and transports t
     const fixture = `
 function Start-Process {
     param([string]$FilePath, $ArgumentList, [string]$Verb, [string]$WindowStyle, [switch]$Wait, [switch]$PassThru)
+    ${scenario === 'uac-failure' ? "throw 'Fixture UAC launch failure'" : ''}
     if ($FilePath -ne 'powershell.exe' -or $Verb -ne 'RunAs' -or -not $Wait) { throw 'Incorrect elevation invocation' }
     if ($ArgumentList[5] -cne ('"'+$payload.path+'"') -or $ArgumentList[7] -cne ('"'+$payload.result+'"')) { throw 'Incorrect file path quoting' }
     [IO.File]::WriteAllText($payload.result, '{"failureCode":1,"restartRequired":false,"stage":"windows-features","detail":"Fixture feature lookup failed"}', (New-Object Text.UTF8Encoding($false)))
-    [pscustomobject]@{ExitCode=1}
+    $process=[pscustomobject]@{ExitCode=${scenario === 'wait-for-exit' ? '$null' : '1'}}
+    $process|Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {$this.ExitCode=1}
+    $process|Add-Member -MemberType ScriptMethod -Name Refresh -Value {}
+    $process
 }
 `;
     const filename = path.join(directory, 'wrapper.ps1');
@@ -169,7 +174,11 @@ function Start-Process {
   });
   backend.activeLog = { append: async line => logged.push(line) };
   try {
-    await assert.rejects(backend.ensureDistribution(), /support logs.*setup stage/);
-    assert.ok(logged.some(line => line.includes('Fixture feature lookup failed')));
+    for (scenario of ['reported-failure', 'wait-for-exit', 'uac-failure']) {
+      logged.length = 0;
+      await assert.rejects(backend.ensureDistribution(), /support logs.*setup stage/);
+      assert.ok(logged.some(line => line.includes(scenario === 'uac-failure' ? 'Fixture UAC launch failure' : 'Fixture feature lookup failed')));
+      if (scenario === 'uac-failure') assert.ok(logged.some(line => line.includes('elevation-start')));
+    }
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

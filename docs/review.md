@@ -443,3 +443,19 @@ stderr fallback and the actual wrapper's quoted Unicode paths/report transport.
 Windows fixtures now run from BOM-prefixed files rather than expanding installer
 and fixture source into encoded argv. The new build still requires a VM retry;
 these local checks do not prove that the reported Windows failure is resolved.
+
+## PowerShell coordinator failure boundary — 2026-11-19
+
+The second supplied VM log `20261119T202916253-install-4bbbfb73.log` still contains
+only parent PowerShell exit 1, without a setup report. The user confirms the new
+build and UAC prompt. This does not identify the failing child command. Added an
+outer coordinator catch with bounded stage/error JSON, explicit successful JSON
+transport exit, process wait/refresh before exit-code comparison, a pre-launch
+protocol marker and recovery of child diagnostics on coordinator failure before
+cleanup. Requested direct execution of the installed helper to distinguish child
+setup failure from coordinator failure without another installer build.
+
+`npm test`: 73 Node and 72 Python tests passed, 22 Windows-only tests skipped on Linux.
+The native wrapper fixture now covers child failure, delayed exit-code availability
+and UAC launch exceptions. Runtime resolution in the user's VM remains unverified;
+the new native fixture cases were not executed on Linux.

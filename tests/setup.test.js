@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Backend } from '../src/main/backend.js';
@@ -286,6 +286,30 @@ test('unexpected elevated setup exit is logged with its stage and never advances
     await assert.rejects(backend.ensureDistribution(), /support logs.*setup stage/);
     assert.ok(logged.some(text => text.includes('windows-features') && text.includes('Fixture missing optional feature.')));
     await assert.rejects(readFile(path.dirname(resultFile)), { code: 'ENOENT' });
+    assert.equal((await backend.setup.read()).status, 'failed');
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+
+test('coordinator launch failure retains the child report before cleaning temporary files', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-wsl-parent-failure-'));
+  const logged = [];
+  let resultPath;
+  const original = new Error('Fixture PowerShell coordinator exit 1');
+  const backend = new Backend(process.cwd(), directory, undefined, 'en', undefined, async (file, args, input) => {
+    if (file === 'wsl.exe') throw new Error('Fixture legacy WSL');
+    const request = JSON.parse(input);
+    resultPath = request.result;
+    await writeFile(resultPath, JSON.stringify({ failureCode: 1, stage: 'windows-features', detail: 'Fixture elevated feature failure.' }));
+    throw original;
+  });
+  backend.requireWindows = () => {};
+  backend.activeLog = { append: async value => logged.push(value) };
+  try {
+    await assert.rejects(backend.ensureDistribution(), error => error === original);
+    assert.ok(logged.some(value => value.includes('coordinator: result-report-v2')));
+    assert.ok(logged.some(value => value.includes('child report after coordinator failure') && value.includes('Fixture elevated feature failure.')));
+    await assert.rejects(readFile(resultPath), { code: 'ENOENT' });
     assert.equal((await backend.setup.read()).status, 'failed');
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

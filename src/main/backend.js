@@ -173,25 +173,53 @@ export class Backend {
           const preparation = path.resolve(this.resources, 'runtime', 'setup-windows-wsl.ps1');
           const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-wsl-setup-'));
           let result;
+          const resultPath = path.join(directory, 'result.json');
+          await this.activeLog?.append('Windows WSL setup coordinator: result-report-v2');
           try {
-            const script = `[Console]::InputEncoding=New-Object System.Text.UTF8Encoding($false)
+            const script = `try {
+$stage='coordinator-input'
+[Console]::InputEncoding=New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)
 $ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'
 $payload=[Console]::In.ReadToEnd()|ConvertFrom-Json
 foreach($value in @($payload.path,$payload.result)){if($value -match '["\\r\\n]'){throw 'Invalid path'}}
 $arguments=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',('"'+$payload.path+'"'),'-ResultPath',('"'+$payload.result+'"'))
+$stage='elevation-start'
 $p=Start-Process -FilePath powershell.exe -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -Wait -PassThru
+$stage='elevation-exit'
+if($p.PSObject.Methods['WaitForExit']){$p.WaitForExit()}
+if($p.PSObject.Methods['Refresh']){$p.Refresh()}
+$processCode=$p.ExitCode
+if($null -eq $processCode){throw 'The elevated process did not expose an exit code'}
+$stage='elevation-report'
 if(Test-Path -LiteralPath $payload.result){
     $report=Get-Content -LiteralPath $payload.result -Raw -Encoding UTF8|ConvertFrom-Json
-    if($report.failureCode -ne $p.ExitCode){throw 'WSL setup result does not match process exit code'}
+    if($report.failureCode -ne $processCode){throw ('WSL setup result does not match process exit code: report='+$report.failureCode+'; process='+$processCode)}
     $report|ConvertTo-Json -Compress
 }else{
-    $code=$p.ExitCode; if($code -eq 0){$code=1}
+    $code=$processCode; if($code -eq 0){$code=1}
     @{restartRequired=($code -in @(3010,1641));failureCode=$code;stage='elevated-process';detail='Setup exited before reporting its stage. Check the packaged script and PowerShell startup.'}|ConvertTo-Json -Compress
+}
+exit 0
+}catch{
+    $detail=$_.Exception.Message
+    $report=@{failureCode=55;restartRequired=$false;stage=$stage;detail=$detail.Substring(0,[Math]::Min(600,$detail.Length))}
+    [Console]::Out.WriteLine(($report|ConvertTo-Json -Compress))
+    exit 0
 }`;
-            result = JSON.parse((await this.runner('powershell.exe', encodedPowerShell(script), JSON.stringify({ path: preparation, result: path.join(directory, 'result.json') }), 900000)).trim());
+            result = JSON.parse((await this.runner('powershell.exe', encodedPowerShell(script), JSON.stringify({ path: preparation, result: resultPath }), 900000)).trim());
             // This setup report contains no SQL credentials; existing support-log redaction still applies.
             await this.activeLog?.append('Windows WSL setup: ' + JSON.stringify(result).slice(0, 2000));
+          } catch (error) {
+            // Recover the child's diagnostic before finally removes it, even when its
+            // coordinator fails to return JSON or exits nonzero. Never use it as readiness.
+            try {
+              const report = JSON.parse(await readFile(resultPath, 'utf8'));
+              await this.activeLog?.append('Windows WSL child report after coordinator failure: ' + JSON.stringify(report).slice(0, 2000));
+            } catch {
+              await this.activeLog?.append('Windows WSL coordinator failed without a readable child report.');
+            }
+            throw error;
           } finally {
             await rm(directory, { recursive: true, force: true });
           }

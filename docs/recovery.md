@@ -271,3 +271,10 @@ The helper receives no SQL credentials. A missing report is labeled
 On Windows PowerShell 5.1, native WSL stderr is captured with a local Continue error
 preference and the native exit code is checked explicitly. A failing kernel updater
 therefore reaches the signed MSI fallback instead of aborting via NativeCommandError.
+
+The coordinator logs `Windows WSL setup coordinator: result-report-v2` before launching
+PowerShell. Its outer try/catch returns a bounded `elevation-start`, `elevation-exit`
+or `elevation-report` failure as JSON. After waiting it refreshes the elevated process
+before comparing exit codes. If the coordinator itself fails without usable JSON,
+main reads and logs any child report before removing the temporary directory; that
+report is diagnostic only and cannot turn coordinator failure into readiness.
