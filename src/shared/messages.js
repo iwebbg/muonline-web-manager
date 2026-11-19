@@ -2,6 +2,7 @@ import { resolveLocale, translate } from './i18n.js';
 
 /** Known application messages only. Arbitrary logs and SQL diagnostics are not translated. */
 const bulgarian = {
+  "This WSL version is too old for automatic setup. Update Windows and install current WSL from Microsoft Store, then click Install again. Existing distributions were retained.": "Тази версия на WSL е твърде стара за автоматична настройка. Обнови Windows и инсталирай актуалния WSL от Microsoft Store, после натисни Инсталирай отново. Съществуващите дистрибуции са запазени.",
   "Restart Windows, then click Install again to continue. Installation progress has been saved.": "Рестартирай Windows и натисни Инсталирай отново, за да продължиш. Напредъкът на инсталацията е запазен.",
   "Untracked application files exist. Recover installation state before uninstalling.": "Има файлове на приложение без запазено състояние. Възстанови състоянието преди деинсталиране.",
   "Confirm the exact SQL endpoint, web database and login before uninstalling.": "Потвърди точния SQL сървър, web база и login преди деинсталиране.",

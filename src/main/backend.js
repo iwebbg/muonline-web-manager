@@ -157,15 +157,22 @@ export class Backend {
     this.requireWindows();
     return this.setup.run('distribution', async () => {
       let distributions;
+      let needsPreparation = false;
       try {
         distributions = await this.runner('wsl.exe', ['--list', '--quiet'], '', 30000);
+        // Inbox WSL may list distros but reject modern install flags and --version.
+        if (!this.profile.development) await this.runner('wsl.exe', ['--version'], '', 30000);
       } catch (error) {
         if (this.profile.development) throw error;
+        needsPreparation = true;
+      }
+      if (needsPreparation) {
         await this.setup.run('windows', async () => {
           const preparation = (await readFile(path.join(this.resources, 'runtime', 'setup-windows-wsl.ps1'), 'utf8')).replaceAll('\r\n', '\n');
           const encoded = Buffer.from(preparation, 'utf16le').toString('base64');
-          const script = "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; $p=Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','" + encoded + "' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; if($p.ExitCode -notin @(0,3010,1641)){exit $p.ExitCode}; @{restartRequired=($p.ExitCode -in @(3010,1641))}|ConvertTo-Json -Compress";
+          const script = "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; $p=Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','" + encoded + "' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; if($p.ExitCode -notin @(0,50,3010,1641)){exit $p.ExitCode}; @{restartRequired=($p.ExitCode -in @(3010,1641));upgradeRequired=($p.ExitCode -eq 50)}|ConvertTo-Json -Compress";
           const result = JSON.parse((await this.runner('powershell.exe', encodedPowerShell(script), '', 900000)).trim());
+          if (result.upgradeRequired) throw new Error('This WSL version is too old for automatic setup. Update Windows and install current WSL from Microsoft Store, then click Install again. Existing distributions were retained.');
           if (result.restartRequired) {
             const restart = new Error('Restart Windows, then click Install again to continue. Installation progress has been saved.');
             restart.code = 'WSL_RESTART_REQUIRED';
@@ -174,7 +181,7 @@ export class Backend {
         });
         // Empty WSL inventory can itself exit nonzero. Once machine features are ready,
         // install the fixed distro directly instead of repeating the failed empty listing.
-        distributions = '';
+        distributions ??= '';
       }
       const exists = distributions.replaceAll('\u0000', '').split(/\r?\n/).some(line => line.trim() === this.profile.distribution);
       if (!exists) {

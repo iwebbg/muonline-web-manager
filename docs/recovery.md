@@ -33,6 +33,13 @@ Machine feature setup checks actual Windows optional-feature state: newly enable
 pending features save a restartRequired checkpoint even if wsl.exe reports exit 0.
 Restart Windows, then click Install/Resume. An empty distro inventory after machine
 preparation proceeds to Ubuntu installation; it does not require manual distro setup.
+Older Windows 10 inbox WSL may still enumerate distros while rejecting --version or
+modern install flags. Setup probes this case and the elevated helper reads advertised
+flags before invoking them. It tries --update only when advertised, adding
+--web-download only when supported to avoid requiring Store access, then rechecks.
+A kernel-only update is insufficient: if modern flags remain absent, setup retains all
+distros and asks for Windows updates and current Microsoft Store WSL. It never falls
+back to WSL1 or an interactive distro installer. Retry Install after updating WSL.
 Resume repairs ownership of the manager-created Laravel storage directories before
 starting the non-root bootstrap container. Earlier installs left storage parent
 directories root-owned, causing the entrypoint's chmod to fail before any SQL work.

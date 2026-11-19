@@ -359,3 +359,23 @@ to installing the fixed Ubuntu distro. No automatic Windows/WSL restart was adde
 PowerShell contracts run only on Windows CI, mock all feature/WSL commands and never
 change Windows features. They have not run locally. Actual UAC, feature activation,
 reboot and resume still require the user's clean Windows VM check with a new build.
+
+
+## Legacy Windows 10 inbox WSL — 2026-11-19
+
+The Windows 10 VM returned wsl.exe usage text after the feature reboot. A subsequent
+manual --version returned "Invalid command line option" and advertised legacy
+--update/--web-download without --no-distribution or --no-launch, confirming inbox WSL. The old setup assumed enabling Windows features also made
+all modern WSL installation flags available.
+
+Setup now probes --version even with successful distro inventory. The elevated helper
+checks advertised --version/--install/--no-distribution/--no-launch flags, uses --update
+only if advertised (with --web-download when supported), and rechecks afterward. A successful legacy kernel-only update does
+not qualify as modern WSL readiness. A bounded EN/BG message requests Windows/current
+Store WSL updates when necessary, retaining installed distros and preventing unsupported
+install commands. New Windows CI contracts cover legacy updater outcomes and null-bearing
+help output; these PowerShell contracts do not run on this Linux workstation.
+
+Verification: 131 tests passed locally; 10 PowerShell contracts are Windows-only and
+remain unexecuted on this Linux workstation. Actual inbox upgrade/UAC and resumed
+installation still need the Windows VM test. No distributions or SQL data were removed.

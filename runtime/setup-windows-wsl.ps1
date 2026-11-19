@@ -25,6 +25,31 @@ try {
         exit 3010
     }
 
+    # Older Windows 10 inbox executables advertise different flags. Never guess their syntax.
+    $helpText = ((& wsl.exe --help 2>&1 | Out-String) -replace '\x00', '')
+    $requiredFlags = @('--version', '--install', '--no-distribution', '--no-launch')
+    $missingFlags = @($requiredFlags | Where-Object { $helpText -notmatch [regex]::Escape($_) })
+    if ($missingFlags.Count -gt 0 -and $helpText -match '--update') {
+        if ($helpText -match '--web-download') {
+            & wsl.exe --update --web-download | Out-Null
+        } else {
+            & wsl.exe --update | Out-Null
+        }
+        $updateCode = $LASTEXITCODE
+        if ($updateCode -in @(3010, 1641)) {
+            exit 3010
+        }
+        if ($updateCode -ne 0) {
+            exit $updateCode
+        }
+        $helpText = ((& wsl.exe --help 2>&1 | Out-String) -replace '\x00', '')
+        $missingFlags = @($requiredFlags | Where-Object { $helpText -notmatch [regex]::Escape($_) })
+    }
+    if ($missingFlags.Count -gt 0) {
+        # The old kernel-only updater may succeed without installing modern Store WSL.
+        exit 50
+    }
+
     # WSL can print "reboot required" and still return zero; check actual feature state as well.
     & wsl.exe --install --no-distribution | Out-Null
     $installCode = $LASTEXITCODE
