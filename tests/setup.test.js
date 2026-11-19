@@ -234,3 +234,30 @@ test('bootstrap failures retain the original error and suggest only a different 
     }
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test('WSL elevation keeps the command short and passes the packaged script path through stdin', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-wsl-length-'));
+  const resources = path.join(directory, 'Desktop App', 'Потребителски файлове');
+  let elevation = false;
+  const backend = new Backend(resources, directory, undefined, 'en', productionProfile, async (file, args, input) => {
+    if (file === 'wsl.exe') throw new Error('WSL unavailable');
+    assert.equal(file, 'powershell.exe');
+    elevation = true;
+    assert.ok(args.join(' ').length < 8192, 'The command stays bounded independently of installer source size');
+    const wrapper = Buffer.from(args.at(-1), 'base64').toString('utf16le');
+    assert.doesNotMatch(wrapper, /Install-ModernWslRuntime|Get-AuthenticodeSignature/);
+    assert.doesNotMatch(wrapper, /-EncodedCommand/);
+    assert.match(wrapper, /'-File',\('"'\+\$payload.path\+'"'\)/);
+    assert.match(wrapper, /-Verb RunAs/);
+    assert.match(wrapper, /InputEncoding=New-Object System.Text.UTF8Encoding/);
+    assert.ok(!wrapper.includes(resources), 'Paths never become PowerShell source');
+    assert.deepEqual(JSON.parse(input), { path: path.resolve(resources, 'runtime', 'setup-windows-wsl.ps1') });
+    return JSON.stringify({ restartRequired: true });
+  });
+  backend.requireWindows = () => {};
+  try {
+    await assert.rejects(backend.ensureDistribution(), /Restart Windows/);
+    assert.equal(elevation, true);
+    assert.equal((await backend.setup.read()).status, 'restartRequired');
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});

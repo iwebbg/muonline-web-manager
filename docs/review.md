@@ -418,3 +418,11 @@ the attempt. All eight pages remain translated in EN/BG with the donate footer.
 These checks do not verify Windows networking, live SQL provisioning or the NSIS
 build. Retest the new Windows build against the VM's actual WSL gateway and SQL
 instance; no migration/provisioning rollback is promised.
+
+## Windows WSL elevation length — 2026-11-19
+
+Replaced nested encoded installer source with a fixed, short wrapper and the packaged
+PS1 file path via UTF-8 JSON stdin. The regression test bounds argv below 8192
+characters, checks quoted `-File`/UAC invocation, exercises spaces/Cyrillic paths and
+retains reboot journaling. `npm test`: 71 Node and 72 Python tests passed; 19 native
+Windows tests skipped on Linux. Real Windows UAC execution still needs the new build.

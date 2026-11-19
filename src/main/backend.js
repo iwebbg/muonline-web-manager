@@ -168,10 +168,11 @@ export class Backend {
       }
       if (needsPreparation) {
         await this.setup.run('windows', async () => {
-          const preparation = (await readFile(path.join(this.resources, 'runtime', 'setup-windows-wsl.ps1'), 'utf8')).replaceAll('\r\n', '\n');
-          const encoded = Buffer.from(preparation, 'utf16le').toString('base64');
-          const script = "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; $p=Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','" + encoded + "' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; if($p.ExitCode -notin @(0,50,51,52,53,54,3010,1641)){exit $p.ExitCode}; @{restartRequired=($p.ExitCode -in @(3010,1641));failureCode=$p.ExitCode}|ConvertTo-Json -Compress";
-          const result = JSON.parse((await this.runner('powershell.exe', encodedPowerShell(script), '', 900000)).trim());
+          // Elevate the packaged file by path. Nested -EncodedCommand expanded the
+          // installer source past Windows' command-line limit before UAC could open.
+          const preparation = path.resolve(this.resources, 'runtime', 'setup-windows-wsl.ps1');
+          const script = `[Console]::InputEncoding=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false); $ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; $payload=[Console]::In.ReadToEnd()|ConvertFrom-Json; if($payload.path -match '["\\r\\n]'){throw 'Invalid path'}; $arguments=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',('"'+$payload.path+'"')); $p=Start-Process -FilePath powershell.exe -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -Wait -PassThru; if($p.ExitCode -notin @(0,50,51,52,53,54,3010,1641)){exit $p.ExitCode}; @{restartRequired=($p.ExitCode -in @(3010,1641));failureCode=$p.ExitCode}|ConvertTo-Json -Compress`;
+          const result = JSON.parse((await this.runner('powershell.exe', encodedPowerShell(script), JSON.stringify({ path: preparation }), 900000)).trim());
           const failures = {
             50: 'Windows needs updating before the current WSL runtime can be installed. Update Windows, then click Install again. Existing distributions were retained.',
             51: 'The official WSL installer could not be downloaded. Check internet access and retry Install. Existing distributions were retained.',

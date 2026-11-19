@@ -219,3 +219,10 @@ create databases. Windows changes use expiring main-owned plans, fresh measureme
 explicit confirmation and UAC. Their limited elevated helper re-resolves the selected
 instance and never receives SQL passwords. See the module documentation for firewall
 scope restrictions, metadata visibility and real-Windows validation limits.
+
+Windows feature/modern-WSL preparation elevates the fixed packaged
+`runtime/setup-windows-wsl.ps1` using `-File`. A small fixed PowerShell wrapper receives
+the main-owned resource path through UTF-8 JSON stdin, validates and quotes the path,
+and waits for UAC/exit status. The installer source is never nested inside encoded
+command arguments: double encoding exceeded Windows' command-line limit before UAC
+could launch. Spaces and Cyrillic installation paths remain data, not script source.
