@@ -690,3 +690,17 @@ the network-isolated PowerShell container with all native effects mocked. A shar
 backend regression covers Install/Resume/Access for Local/IP→Domain transitions.
 The proposed one-rule manual Any repair and subsequent LAN/ACME results have not
 yet been reported by the user; no native success is inferred from these mocks.
+
+### User-confirmed LAN and public SSL access (2026-11-21)
+
+After the Any-address firewall repair, the user confirmed that the website on the
+Windows host 192.168.0.104 was reachable from another computer on the same LAN.
+The user then applied Domain + SSL through Access & SSL and confirmed successful
+HTTPS access to the configured public domain, with a browser screenshot of the
+working site. The preceding test instructions used DNS-only and router forwarding
+to that host; no subsequent proxy-status change was reported.
+
+This confirms the user's IP→Domain transition and working SSL access on that test
+machine. It is user-reported native evidence, separate from the automated mocked
+checks. It does not establish fresh Domain-first installation on every OS, renewal
+at expiry, Cloudflare proxy re-enablement, or address refresh after a Windows reboot.
