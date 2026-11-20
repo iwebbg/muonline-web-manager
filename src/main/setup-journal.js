@@ -1,26 +1,10 @@
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
+import { publicInstallationSettings } from '../shared/installation-settings.js';
+export { publicInstallationSettings } from '../shared/installation-settings.js';
 
 const stages = new Set(['windows', 'distribution', 'linux', 'linuxRestart', 'docker', 'keepalive', 'sqlNetwork', 'application', 'ready', 'uninstall']);
 const statuses = new Set(['running', 'complete', 'failed', 'restartRequired']);
-
-/** Persist only a bounded installation draft. Bootstrap identities/passwords are excluded. */
-export function publicInstallationSettings(input = {}) {
-  if (!input || typeof input !== 'object') return {};
-  const result = {};
-  for (const key of ['sqlHost', 'sqlPort', 'profile', 'appEnv', 'gameDatabase', 'webDatabase', 'appLogin', 'gameLogin']) {
-    if (typeof input[key] === 'string' && input[key].length <= 512) result[key] = input[key];
-  }
-  if (typeof input.trustCertificate === 'boolean') result.trustCertificate = input.trustCertificate;
-  if (input.access && typeof input.access === 'object') {
-    result.access = {};
-    for (const key of ['mode', 'host', 'email']) {
-      if (typeof input.access[key] === 'string' && input.access[key].length <= 512) result.access[key] = input.access[key];
-    }
-    if (typeof input.access.httpAcknowledged === 'boolean') result.access.httpAcknowledged = input.access.httpAcknowledged;
-  }
-  return result;
-}
 
 /** Desktop setup progress is independent of the private WSL application/SQL phase journal. */
 export class SetupJournal {
@@ -58,7 +42,12 @@ export class SetupJournal {
 
   async saveDraft(input) {
     const state = await this.read();
-    await this.write({ ...state, configuration: { ...state.configuration, ...publicInstallationSettings(input) } });
+    const draft = publicInstallationSettings(input);
+    const configuration = { ...state.configuration, ...draft };
+    for (const key of ['access', 'administrator']) {
+      if (draft[key]) configuration[key] = { ...state.configuration[key], ...draft[key] };
+    }
+    await this.write({ ...state, configuration });
   }
 
   /** Persist a restart boundary across manager closes; it is cleared only on a new boot. */

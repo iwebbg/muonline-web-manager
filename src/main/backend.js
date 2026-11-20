@@ -582,6 +582,10 @@ exit 0
           }
           return stored.public.command;
         }
+        case 'saveInstallationDraft':
+          // Only allow-listed public fields; no runtime effect or setup-stage change.
+          await this.setup.saveDraft(input.settings);
+          return this.setup.read();
         case 'settings':
           return { ...this.settings, setup: await this.setup.read(), development: this.profile.development, distribution: this.profile.distribution, language: this.language, managerVersion: MANAGER_VERSION, trustedKeys: Object.keys(this.trust.keys) };
         case 'setLanguage':

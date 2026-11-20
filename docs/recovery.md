@@ -343,3 +343,28 @@ Configured Mixed Mode without a readable live value is Not checked, not evidence
 that another restart is required. Only a confirmed configured/live mismatch advises
 a restart. Docker PDO facts may confirm the selected Windows instance only after
 matching its measured address, listener port and owning service PID.
+
+## Installation form choices across restarts
+
+The installation form automatically saves its bounded public draft on edits, before
+Install is clicked. It restores SQL host/port/admin username, database and restricted
+login names, MuServer profile key, APP_ENV, certificate trust choice, access mode,
+domain/IP, certificate email, HTTP acknowledgement and web administrator name/email.
+Passwords are excluded both before draft IPC and again by the main process. The
+endpoint-change confirmation is never remembered. SQL diagnostic/manual and backup
+passwords are not part of this installation draft.
+
+Public fields survive navigation, manager reopening and Windows reboot. Signed
+release discovery restores the selected profile after its options arrive; it must
+not reset the selection to the first profile while loading. Initial preferences
+must not be overwritten with the blank form captured before startup restoration.
+Draft writes are coalesced and completed before another backend operation. A failed
+save shows a localized notice; retry before closing. Full runtime uninstall clears
+the draft, while component recovery retains it.
+
+A saved SQL IP is a draft, not proof of current reachability. Install/Resume still
+measures a local Windows SQL endpoint and, for a bound interrupted deployment,
+rediscovers that same instance after a WSL gateway change. Verified replacements
+are saved back to the draft. External SQL endpoints are not silently redirected;
+an externally changed IP must be corrected by the operator. Ready deployments are
+not automatically retargeted by editing an installation draft.

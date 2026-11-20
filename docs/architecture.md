@@ -39,8 +39,11 @@ repository/packages. Linux account/systemd preparation belongs to worker.py.
 Install and Resume now share a desktop setup coordinator: WSL distribution, Linux
 account/systemd, Docker, keepalive, then application installation/resume. The desktop
 `installation.json` records the current stage before effects, its completion/failure,
-the Linux username and a bounded public form draft. It never contains temporary SQL
-or administrator credentials, command output or exception text. Completed effects
+the Linux username and a bounded public form draft. It retains SQL usernames and web administrator name/email but never passwords,
+endpoint-change confirmations, command output or exception text. The narrow
+`saveInstallationDraft` IPC stores only allow-listed public fields and never changes
+the runtime or setup stage. Renderer edits are coalesced and pending saves finish
+before the next backend operation. Completed effects
 are re-measured before retry: a healthy Docker Engine is reused. The worker's private
 application phases remain authoritative for bootstrap/admin/SSL recovery.
 

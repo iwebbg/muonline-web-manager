@@ -51,7 +51,7 @@ test('one Install resumes after restart without reinstalling healthy WSL/Docker 
     assert.equal(saved.status, 'failed');
     assert.equal(saved.linuxUser, 'muonline');
     assert.equal(saved.configuration.sqlHost, '192.0.2.8');
-    assert.doesNotMatch(JSON.stringify(saved), /sql-password|admin-password|bootstrap-login|private failure/);
+    assert.doesNotMatch(JSON.stringify(saved), /sql-password|admin-password|private failure/);
     const resumed = create();
     resumed.deploy = async (action, input) => {
       assert.equal(action, 'install');
@@ -236,7 +236,7 @@ test('bootstrap failures retain the original error and suggest only a different 
         assert.equal(error.sqlSuggestion?.host, mode === 'different' ? '172.20.48.1' : undefined);
         return true;
       });
-      assert.doesNotMatch(await readFile(path.join(directory, 'installation.json'), 'utf8'), /corrected-admin|current-private-password/);
+      assert.doesNotMatch(await readFile(path.join(directory, 'installation.json'), 'utf8'), /current-private-password/);
     }
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
@@ -348,7 +348,7 @@ test('Install provisions with the detected local endpoint and journals it withou
       assert.deepEqual(result.sqlResolvedEndpoint, { host: '172.30.176.1', port: 1433 });
       const journal = await readFile(path.join(directory, 'installation.json'), 'utf8');
       assert.equal(JSON.parse(journal).configuration.sqlHost, '172.30.176.1');
-      assert.doesNotMatch(journal, /current-private-secret|temporary-admin|renderer-forgery/);
+      assert.doesNotMatch(journal, /current-private-secret|renderer-forgery/);
     }
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
@@ -407,4 +407,39 @@ test('Windows boot measurement accepts only the fixed read-only CIM probe result
   assert.equal(await backend.windowsBootIdentity(), '638990000000000000');
   backend.runner = async () => 'Unverified boot';
   await assert.rejects(backend.windowsBootIdentity(), /could not be verified/);
+});
+
+
+test('public installation draft survives manager restart with all fields but no passwords or grants', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'muonline-draft-'));
+  try {
+    const create = () => new Backend(process.cwd(), directory);
+    const draft = { sqlHost: '192.0.2.88', sqlPort: '1444', sqlAdmin: 'setup-admin', profile: 'darksteam_97d99i', appEnv: 'production', gameDatabase: 'Game2', webDatabase: 'Web2', appLogin: 'app2', gameLogin: 'game2', trustCertificate: false,
+      access: { mode: 'domain', host: 'mu.example.test', email: 'cert@example.test', httpAcknowledged: false, password: 'access-private' },
+      administrator: { name: 'My Owner', email: 'owner@example.test', password: 'web-private' },
+      sqlPassword: 'sql-private', adminPassword: 'flat-private', sqlEndpointChange: { confirmed: true }, confirmSqlEndpoint: true, stage: 'ready', restartBoot: 'fake', version: 'evil' };
+    await create().invoke('saveInstallationDraft', { settings: draft });
+    const saved = await create().invoke('setupStatus');
+    assert.equal(saved.configuration.profile, draft.profile);
+    assert.equal(saved.configuration.sqlHost, draft.sqlHost);
+    assert.equal(saved.configuration.sqlPort, draft.sqlPort);
+    assert.equal(saved.configuration.sqlAdmin, draft.sqlAdmin);
+    assert.deepEqual(saved.configuration.administrator, { name: 'My Owner', email: 'owner@example.test' });
+    assert.deepEqual(saved.configuration.access, { mode: 'domain', host: 'mu.example.test', email: 'cert@example.test', httpAcknowledged: false });
+    assert.equal(saved.configuration.gameDatabase, 'Game2');
+    assert.equal(saved.configuration.webDatabase, 'Web2');
+    assert.equal(saved.configuration.appLogin, 'app2');
+    assert.equal(saved.configuration.gameLogin, 'game2');
+    assert.equal(saved.configuration.appEnv, 'production');
+    assert.equal(saved.configuration.trustCertificate, false);
+    assert.equal(saved.stage, undefined);
+    assert.equal(saved.restartBoot, undefined);
+    const serialized = await readFile(path.join(directory, 'installation.json'), 'utf8');
+    assert.doesNotMatch(serialized, /private|password|Password|confirmed|confirmSqlEndpoint|evil/);
+    await create().setup.saveDraft({ administrator: { password: 'new-private' }, access: { host: 'changed.example.test' } });
+    const resumed = await create().setup.read();
+    assert.deepEqual(resumed.configuration.administrator, saved.configuration.administrator);
+    assert.equal(resumed.configuration.access.email, 'cert@example.test');
+    assert.equal(resumed.configuration.access.host, 'changed.example.test');
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });

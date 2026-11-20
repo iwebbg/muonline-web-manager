@@ -563,3 +563,27 @@ no app container, ignores stale manual overrides and verifies private stdin tran
 fresh interrupted-bootstrap-to-diagnostics journey without entering runtime logins.
 These isolated tests do not establish native Win11 SQL bootstrap success; the
 underlying game provisioning failure still needs evidence from the user's VM.
+
+### Installation choices retained across restarts
+
+Added narrow `saveInstallationDraft` IPC with a shared field allow-list. Public form
+edits save before Install, including SQL username, host/port/database/login names,
+profile, APP_ENV, TLS choice, access settings and administrator name/email. Passwords
+and SQL endpoint-change grants are excluded. Nested partial saves retain existing
+public administrator/access values. Runtime configuration is not changed by saving
+a draft; the existing local SQL discovery/recovery checks remain authoritative.
+
+Fixed startup restoration overwriting saved fields with the initial blank form and
+profile selection being lost before asynchronous signed release discovery. A public
+draft updates immediately for navigation, while disk writes are coalesced and finish
+before backend operations. Persistence errors have EN/BG notices. Uninstall clears
+the draft. Temporary SQL administrator usernames are now intentionally retained at
+the user's request; their passwords and bootstrap output remain excluded.
+
+`npm test`: 86 Node and 76 Python tests pass, 22 Windows-only checks skipped on Linux.
+The added backend test reopens a new coordinator and checks the real journal on disk,
+secret/confirmation exclusion and nested partial updates. `npm run test:ui` passes
+EN/BG editing, pre-Install saving, renderer reopening, delayed profile restoration,
+all public field values, empty password inputs and subsequent restart/recovery flows.
+The error-scroll assertion waits for measured visibility rather than a fixed smooth
+animation delay. Native Windows reboot persistence still requires the user's VM test.

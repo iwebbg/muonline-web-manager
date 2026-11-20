@@ -27,6 +27,7 @@ let heldError = null;
 let bootstrapMode = null;
 let onboardingMode = null;
 let rebootCheckpoint = false;
+let installationDraft = {};
 let savedBootstrapEndpoint = { host: '127.0.0.1', port: 1433, gameHost: '127.0.0.1', gamePort: 1433 };
 let refuseUninstall = true;
 const timer = setTimeout(() => { console.error('Electron smoke test timed out.'); app.exit(1); }, 60000);
@@ -50,8 +51,14 @@ async function selectLanguage(locale) {
 
 /** Exercise actual renderer navigation and forms through the sandboxed preload bridge. */
 async function smoke() {
+  const { publicInstallationSettings } = await import('../src/shared/installation-settings.js');
   ipcMain.handle('manager:invoke', (event, action, input) => {
     operations.push({ action, input });
+    if (action === 'saveInstallationDraft') {
+      assert.deepEqual(input.settings, publicInstallationSettings(input.settings), 'Only public form values cross draft IPC');
+      installationDraft = { ...installationDraft, ...input.settings };
+      return { ok: true, result: { schema: 1, completed: [], configuration: installationDraft } };
+    }
     if (action === heldAction) {
       return new Promise(resolve => {
         releaseHeld = () => {
@@ -62,7 +69,7 @@ async function smoke() {
         };
       });
     }
-    if (action === 'setupStatus' && rebootCheckpoint) return { ok: true, result: { schema: 1, stage: 'windows', status: 'restartRequired', completed: [], configuration: {} } };
+    if (action === 'setupStatus' && rebootCheckpoint) return { ok: true, result: { schema: 1, stage: 'windows', status: 'restartRequired', completed: [], configuration: installationDraft } };
     if (['install','resumeInstall'].includes(action) && onboardingMode) {
       if (onboardingMode === 'bootstrap-failure') {
         runtimeInstalled = true; runtimePhase = 'bootstrap-pending';
@@ -98,7 +105,7 @@ async function smoke() {
     if (action === 'setLanguage') {
       language = input.language;
     }
-    if (action === 'uninstallRuntime') { assert.equal(input.distributionConfirmation, 'MuOnline-Dev'); assert.equal(input.confirmed, true); assert.equal(input.sqlRemoval.confirmed, true); assert.equal(input.sqlRemoval.target.database, 'MuOnline_Web'); assert.equal(input.sqlRemoval.admin_password, 'Private-Password/42!'); if (refuseUninstall) return { ok: false, error: 'SQL cleanup incomplete: code=sql_operation_failed; database=removed; login=retained' }; runtimeInstalled=false; }
+    if (action === 'uninstallRuntime') { assert.equal(input.distributionConfirmation, 'MuOnline-Dev'); assert.equal(input.confirmed, true); assert.equal(input.sqlRemoval.confirmed, true); assert.equal(input.sqlRemoval.target.database, 'MuOnline_Web'); assert.equal(input.sqlRemoval.admin_password, 'Private-Password/42!'); if (refuseUninstall) return { ok: false, error: 'SQL cleanup incomplete: code=sql_operation_failed; database=removed; login=retained' }; runtimeInstalled=false; installationDraft={}; }
     if (action === 'setGameWrites') {
       assert.equal(input.gameWrites.confirmed, true);
       runtimeWrites = input.gameWrites.enabled ? 'enabled' : 'disabled';
@@ -121,7 +128,7 @@ async function smoke() {
       logs: { logsOpened: true },
       openLogs: { logsOpened: true },
       setGameWrites: { gameWrites: runtimeWrites, restarted: true },
-      setupStatus: { schema: 1, distribution: 'MuOnline-Dev', linuxUser: 'muonline', stage: 'ready', status: 'complete', completed: [], configuration: {} },
+      setupStatus: { schema: 1, distribution: 'MuOnline-Dev', linuxUser: 'muonline', stage: 'ready', status: 'complete', completed: [], configuration: installationDraft },
       adminList: adminError ? {code:adminError} : {administrators:identities},
       setLanguage: { language },
       openWebsite: { opened: true },
@@ -132,9 +139,9 @@ async function smoke() {
       sqlApply: { applied: true, changed: true, reason: 'serviceRestarted' },
       sqlCopyReport: { copied: true },
       sqlCopyPlan: { copied: true },
-      settings: { distribution: 'MuOnline-Dev', setup: { schema: 1, distribution: 'MuOnline-Dev', linuxUser: 'muonline', stage: 'ready', status: 'complete', completed: [], configuration: {} }, cdn: 'https://cdn.interweb.bg', webChannel: 'muonline-web/releases/v1.3.0', managerChannel: 'muonline-web/manager/stable', trustedKeys: [], language },
+      settings: { distribution: 'MuOnline-Dev', setup: { schema: 1, distribution: 'MuOnline-Dev', linuxUser: 'muonline', stage: 'ready', status: 'complete', completed: [], configuration: installationDraft }, cdn: 'https://cdn.interweb.bg', webChannel: 'muonline-web/releases/v1.3.0', managerChannel: 'muonline-web/manager/stable', trustedKeys: [], language },
       updates: { web: pending ? { latestVersion: '1.5.0', newTag: true, installedVersion, installationKnown: true, error: 'Release is not ready.', ready: false, available: false } : { version: '1.4.0', latestVersion: '1.4.0', installedVersion, installationKnown: true, ready: true, available: installedVersion !== '1.4.0', profiles: ['registry_profile', 'darksteam_97d99i', 'darksteam_1_0m', 'muemu_season_6', 'mudevs_season_21'] }, manager: { error: 'Not published' } },
-      status: { bootstrapSqlEndpoint: runtimePhase === 'bootstrap-pending' ? savedBootstrapEndpoint : null, uninstallTarget: { host: 'sql.example', port: 1433, database: 'MuOnline_Web', login: 'web_app' }, gameWrites: runtimeWrites, installed: runtimeInstalled, phase: runtimePhase, version: installedVersion, access: runtimeAccess, services:JSON.stringify([{Service:'app',State:runtimeServiceState}]) }
+      status: { bootstrapSqlEndpoint: runtimeInstalled && runtimePhase === 'bootstrap-pending' ? savedBootstrapEndpoint : null, uninstallTarget: { host: 'sql.example', port: 1433, database: 'MuOnline_Web', login: 'web_app' }, gameWrites: runtimeWrites, installed: runtimeInstalled, phase: runtimePhase, version: installedVersion, access: runtimeAccess, services:JSON.stringify([{Service:'app',State:runtimeServiceState}]) }
     };
     return { ok: true, result: results[action] ?? 'Completed test operation' };
   });
@@ -460,7 +467,7 @@ async function smoke() {
   assert.equal(runtimeInstalled, true);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#operationProgress').open`), false);
   assert.equal(await window.webContents.executeJavaScript(`document.activeElement.id`), 'output');
-  await window.webContents.executeJavaScript(`new Promise(resolve => setTimeout(resolve, 500))`);
+  await window.webContents.executeJavaScript(`new Promise(resolve => { let attempts=0; const timer=setInterval(()=>{if(document.querySelector('.console').getBoundingClientRect().top < innerHeight - 70 || ++attempts >= 100){clearInterval(timer);resolve();}},20); })`);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('.console').getBoundingClientRect().top < innerHeight - 70 && document.querySelector('.console').classList.contains('operation-error')`), true, 'Failure scrolls to the operation result');
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallSqlPassword').value`), '');
   assert.match(await window.webContents.executeJavaScript(`document.querySelector('#output').textContent`), /retained|запазен/);
@@ -476,16 +483,28 @@ async function smoke() {
   for (const locale of ['en', 'bg']) {
     await selectLanguage(locale);
     runtimeInstalled = false; runtimePhase = 'bootstrap-pending'; pending = false;
-    onboardingMode = 'restart'; rebootCheckpoint = false;
+    onboardingMode = 'restart'; rebootCheckpoint = false; installationDraft = {};
     const freshLoad = new Promise(resolve => window.webContents.once('did-finish-load', resolve));
     window.webContents.reload(); await freshLoad;
     await window.webContents.executeJavaScript(`new Promise(resolve=>{const timer=setInterval(()=>{if(document.querySelector('main').getAttribute('aria-busy')==='false'){clearInterval(timer);resolve();}},10);})`);
     assert.deepEqual(await window.webContents.executeJavaScript(`Array.from(document.querySelectorAll('nav [data-page]')).filter(button=>!button.hidden).map(button=>button.dataset.page)`), ['install','sql','support']);
     assert.equal(await window.webContents.executeJavaScript(`Boolean(document.querySelector('#installForm'))`), true);
     assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#uninstallForm')`), null);
+    const draftValues = { sqlHost: '192.0.2.99', sqlPort: '1444', sqlAdmin: 'TemporarySetup', profile: 'darksteam_97d99i', appEnv: 'production', gameDatabase: 'GameDraft', webDatabase: 'WebDraft', appLogin: 'AppDraft', gameLogin: 'GameDraftLogin', mode: 'domain', host: 'mu.example.test', acmeEmail: 'cert@example.test', adminName: 'Draft Owner', adminEmail: 'draft@example.test' };
+    await window.webContents.executeJavaScript(`(()=>{const form=document.querySelector('#installForm'); for(const [name,value] of Object.entries(${JSON.stringify(draftValues)})) form.elements[name].value=value; form.elements.sqlPassword.value='NeverPersist-SQL123!'; form.elements.adminPassword.value='NeverPersist-Web123!'; form.elements.trustCertificate.checked=false; form.dispatchEvent(new Event('input'));})();`);
+    assert.equal(installationDraft.profile, 'darksteam_97d99i');
+    assert.equal(installationDraft.administrator.email, 'draft@example.test');
+    assert.doesNotMatch(JSON.stringify(installationDraft), /NeverPersist|Password|password/);
+    const reloadDraft = new Promise(resolve => window.webContents.once('did-finish-load', resolve));
+    window.webContents.reload(); await reloadDraft;
+    await window.webContents.executeJavaScript(`new Promise(resolve=>{const timer=setInterval(()=>{if(document.querySelector('main').getAttribute('aria-busy')==='false'){clearInterval(timer);resolve();}},10);})`);
+    for (const [name,value] of Object.entries(draftValues)) assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installForm').elements[${JSON.stringify(name)}].value`), value, 'Restored ' + name);
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="trustCertificate"]').checked`), false);
+    for (const name of ['sqlPassword','adminPassword']) assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installForm').elements[${JSON.stringify(name)}].value`), '');
+    await window.webContents.executeJavaScript(`const form=document.querySelector('#installForm'); form.elements.sqlHost.value='127.0.0.1'; form.elements.sqlPort.value='1433'; form.dispatchEvent(new Event('input'));`);
     await window.webContents.executeJavaScript(`(()=>{const form=document.querySelector('#installForm'); for(const [name,value] of Object.entries({sqlPassword:'TemporaryPrivate123!',adminName:'Owner',adminEmail:'owner@example.test',adminPassword:'AdminPrivate123!'})){form.elements[name].value=value;} form.querySelector('button[type="submit"]').click();})();`);
     await idle();
-    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').dataset.kind`), 'restart');
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').dataset.kind`), 'restart', await window.webContents.executeJavaScript(`JSON.stringify({output:document.querySelector('#output').textContent, invalid:[...document.querySelectorAll('#installForm :invalid')].map(field=>field.name)})`));
     assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').open`), true);
     assert.match(await window.webContents.executeJavaScript(`document.querySelector('#installationEstimate').textContent`), /15/);
     assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="sqlPassword"]').value`), '');
