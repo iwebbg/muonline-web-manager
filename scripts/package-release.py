@@ -59,7 +59,7 @@ def package(runtime, output, version, cdn, manager_min='0.1.0'):
         raise ValueError('Version must be stable major.minor.patch.')
     if not cdn.startswith('https://'):
         raise ValueError('CDN must use HTTPS.')
-    for required in ('artisan', 'vendor/autoload.php', 'vendor/composer/installed.json', 'public/build/manifest.json', 'docker/php/Dockerfile'):
+    for required in ('artisan', 'vendor/autoload.php', 'vendor/composer/installed.json', 'public/build/manifest.json', 'docker/php/Dockerfile', 'docker/nginx/prod/Dockerfile', 'docker/nginx/prod/default.conf.template', 'docker/nginx/prod/startup.sh', 'docker/nginx/prod/certbot-renew.sh'):
         if not (runtime / required).is_file():
             raise ValueError('Incomplete production runtime: ' + required)
     installed = json.loads((runtime / 'vendor/composer/installed.json').read_text())

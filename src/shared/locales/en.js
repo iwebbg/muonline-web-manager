@@ -1,5 +1,7 @@
 /** Application-owned interface strings. Runtime identifiers and logs remain unchanged. */
 export default {
+  "setup.stage.webNetwork": "Website network access",
+  "progress.stage.webNetwork": "Preparing website ports and Windows network access…",
   "installation.draftHint": "Installation choices are saved automatically. Passwords must be entered again after reopening.",
   "installation.draftFailed": "Your latest choices could not be saved. Retry before closing the panel.",
   "sql.savedHint": "Connection addresses, databases, runtime logins, passwords and TLS options are read automatically inside the installed environment, including an incomplete installation. You do not need to copy anything from .env. Uncheck this option only for an advanced manual/external connection test.",

@@ -2,6 +2,22 @@ import { resolveLocale, translate } from './i18n.js';
 
 /** Known application messages only. Arbitrary logs and SQL diagnostics are not translated. */
 const bulgarian = {
+  "The web release lacks Laravel production nginx files. Publish a compatible signed web release before using Domain + SSL.": "Web release-ът няма нужните Laravel production nginx файлове. Публикувай съвместим подписан web release преди Domain + SSL.",
+  "Windows web access setup did not complete. Accept the UAC request and inspect the support log before retrying.": "Настройването на Windows достъпа до сайта не завърши. Потвърди UAC заявката и провери support лога преди повторен опит.",
+  "Previous Windows web access setup is incomplete. Retry installation or Access settings before starting.": "Предишната настройка на Windows достъпа до сайта е недовършена. Повтори инсталацията или настройките за достъп преди стартиране.",
+  "Web network command failed. Check Windows networking permissions and services.": "Мрежовата команда е неуспешна. Провери правата и мрежовите услуги на Windows.",
+  "Automatic public web access requires verified NAT networking. Mirrored or unknown networking needs a separate verified configuration.": "Автоматичният публичен достъп изисква потвърдена NAT мрежа. Mirrored или неразпозната мрежа изисква отделна проверена конфигурация.",
+  "The website environment has an ambiguous default network interface.": "Не може да се определи еднозначно основният мрежов интерфейс на сайта.",
+  "A unique private website environment address could not be verified.": "Не може да се потвърди един частен адрес на средата за сайта.",
+  "Web port forwarding conflicts with an existing non-manager configuration. No unrelated forwarding will be replaced.": "Пренасочването на web портовете е в конфликт с чужда конфигурация. Съществуващото чуждо пренасочване няма да се подменя.",
+  "A required web port is already used by another Windows service. Stop that service or use a separate hosting machine.": "Необходим web порт се използва от друга Windows услуга. Спри тази услуга или използвай отделна машина за сайта.",
+  "A web firewall rule name is owned by another configuration.": "Име на web firewall правило принадлежи на друга конфигурация.",
+  "Web network storage must not be a redirected directory.": "Директорията за мрежовата конфигурация не може да е пренасочена.",
+  "Web network storage is not owned by Windows administrators.": "Директорията за мрежовата конфигурация не е собственост на Windows администраторите.",
+  "Web network configuration belongs to another Windows user or runtime.": "Мрежовата конфигурация принадлежи на друг Windows потребител или среда.",
+  "The web refresh task name is owned by another configuration.": "Името на задачата за обновяване на web достъпа принадлежи на друга конфигурация.",
+  "Web refresh task owner cannot be verified.": "Собственикът на задачата за обновяване на web достъпа не може да бъде потвърден.",
+  "Web networking failed and could not be restored. Inspect manager-owned forwarding before retrying.": "Мрежовата настройка е неуспешна и не може да бъде възстановена. Провери пренасочванията на мениджъра преди повторен опит.",
   "Game database access setup failed. Check the existing game database, selected MuServer version and temporary SQL administrator permissions in SQL Troubleshooting. Use Resume after correcting the cause; existing SQL resources were retained.": "Настройката на достъпа до game базата е неуспешна. Провери съществуващата game база, избраната MuServer версия и правата на временния SQL администратор чрез SQL Troubleshooting. След корекция използвай Продължи; съществуващите SQL ресурси са запазени.",
   "Windows boot identity could not be verified.": "Не може да се потвърди последното стартиране на Windows. Провери правата и support логовете.",
   "A unique local SQL Server listener could not be verified. Check SQL Troubleshooting and the SQL port.": "Не може да се потвърди еднозначно локалният SQL Server. Провери SQL Troubleshooting и SQL порта.",
@@ -185,6 +201,10 @@ export function translateMessage(locale, message) {
   if (typeof message !== 'string' || resolveLocale(locale) === 'en') {
     return message;
   }
+  const webPrefix = 'Windows web access setup failed: ';
+  if (message.startsWith(webPrefix)) return 'Настройването на Windows достъпа до сайта е неуспешно: ' + translateMessage(locale, message.slice(webPrefix.length));
+  const networkSuffix = ' Windows web networking could not be restored; check manager-owned port forwarding.';
+  if (message.endsWith(networkSuffix)) return translateMessage(locale, message.slice(0, -networkSuffix.length)) + ' Windows мрежовият достъп не може да бъде възстановен; провери пренасочванията на мениджъра.';
   if (Object.hasOwn(bulgarian, message)) {
     return bulgarian[message];
   }

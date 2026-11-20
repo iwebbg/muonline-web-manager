@@ -3,7 +3,7 @@ import path from 'node:path';
 import { publicInstallationSettings } from '../shared/installation-settings.js';
 export { publicInstallationSettings } from '../shared/installation-settings.js';
 
-const stages = new Set(['windows', 'distribution', 'linux', 'linuxRestart', 'docker', 'keepalive', 'sqlNetwork', 'application', 'ready', 'uninstall']);
+const stages = new Set(['windows', 'distribution', 'linux', 'linuxRestart', 'docker', 'keepalive', 'sqlNetwork', 'webNetwork', 'application', 'ready', 'uninstall']);
 const statuses = new Set(['running', 'complete', 'failed', 'restartRequired']);
 
 /** Desktop setup progress is independent of the private WSL application/SQL phase journal. */

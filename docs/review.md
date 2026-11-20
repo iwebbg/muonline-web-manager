@@ -587,3 +587,51 @@ EN/BG editing, pre-Install saving, renderer reopening, delayed profile restorati
 all public field values, empty password inputs and subsequent restart/recovery flows.
 The error-scroll assertion waits for measured visibility rather than a fixed smooth
 animation delay. Native Windows reboot persistence still requires the user's VM test.
+
+
+### Laravel nginx integration and Windows web ports
+
+Domain + SSL now builds `docker/nginx/prod/Dockerfile` from the installed signed web
+release and runs its template, standalone first issuance and cron renewal scripts.
+The manager no longer generates a separate TLS server or runs a separate certbot
+service for new deployments. Existing domain certificate directories and Local/IP
+HTTP behavior are preserved. APP_ENV remains independent; the full Laravel production
+Compose file is intentionally not substituted for the manager's bootstrap/update
+coordinator. Packaging validates all four nginx contract files. No web release/CDN
+artifacts have been regenerated, signed or published by this change.
+
+Access transitions build nginx before stopping the old proxy, preserve exact private
+configuration backups, require health/syntax success, retire the old renewal timer
+only after success and capture redacted nginx startup output before failure recovery.
+Initial challenge startup temporarily disables Docker restart retries; normal restart
+behavior is enabled only after certificate health succeeds, preventing a refused
+challenge from repeatedly contacting the CA. Pre-migration update recovery restores
+original Compose/nginx bytes, including legacy
+contracts. Pending initial installs can resume with changed access settings. SQL
+migrations still have no automatic rollback. See [web access](web-access.md).
+
+The new narrow Windows helper prepares only TCP 80 (IP) or 80/443 (Domain), only for a
+measured private default-interface WSL NAT IPv4 target. It refuses unknown/mirrored
+networking, foreign listeners/proxies/task names and changed ownership. It scopes
+firewall rules to IPv4, journals interrupted elevation, restores failed mode changes
+and installs refresh code/configuration in an administrator-protected Program Files
+folder. Its same-user elevated task refreshes at logon/every two minutes without
+stored credentials. Local changes/uninstall clean up owned public exposure. Router,
+DNS, upstream policy and Cloudflare routing remain outside this local transaction.
+
+Validation: `npm test` passes 90 Node and 79 Python tests, with 23 Windows-only tests
+skipped on Linux. `npm run test:ui` passes the EN/BG panel suite. The real PowerShell
+helper functions pass `tests/windows-web-contract.ps1` in the existing PowerShell
+Linux container with every OS/network/task effect mocked; Windows CI runs the same
+safe contract. Cases include occupied ports, idempotence, changed target, partial
+firewall failure recovery, unsupported networking and lost ownership cleanup refusal.
+
+`python3 scripts/check-laravel-nginx.py` passes actual Compose interpolation/APP_ENV,
+nginx template HTTP-01 response/HTTPS health using an ephemeral self-signed key, and
+the unchanged Laravel startup/renewal flow with mocked ACME/daemon effects. Containers
+use no network, no published host ports and existing local images only. These checks
+do not verify a real CA request, Windows UAC/Firewall/Task Scheduler, full production
+nginx Dockerfile build, external LAN/router/Cloudflare routing or native reboot. The
+previous successful Win10/Win11/Server2022/Server2025 VM runs were on the earlier build;
+targeted acceptance on the new build is still required. The historical 522 log proves
+a failed proxied challenge, not which external/local hop caused it.

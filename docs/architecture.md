@@ -97,7 +97,7 @@ as the PHP 8.5 base with ODBC/sqlsrv/Redis extensions, then mounts the prebuilt 
 The development target name describes the image build stage; APP_ENV comes from the
 site configuration and can be production. Composer is present in the image but is not
 needed at runtime because vendor is shipped. There is no frontend container or runtime
-Node.js. PHP processes run as www-data; nginx sees a read-only application mount.
+Node.js. PHP processes run as www-data; nginx sees a read-only application mount. Domain nginx is built from the installed release's `docker/nginx/prod/Dockerfile`; its startup/cron scripts own certificate issuance and renewal. Local/IP retain the existing HTTP proxy.
 `app`, `queue`, `scheduler`, `nginx` and Redis use `restart: unless-stopped`.
 
 Docker is enabled under WSL systemd. The current user's Windows scheduled task
@@ -158,18 +158,17 @@ write changes are never applied just by moving the switch.
 | Domain + SSL | WSL ports 80/443 | HTTPS domain, secure cookie true | Recommended production |
 
 APP_ENV is independent. Session domain is null (host-only); HttpOnly and SameSite=Lax
-are explicit. A domain/email is validated before writing nginx config. HTTP-01 uses
-a webroot, certificates have domain-specific directories, and a systemd timer renews
-certificates twice daily and reloads nginx. Port-80 ACME access is required for renewal.
+are explicit. A domain/email is validated before writing nginx config. Domain startup uses the release's standalone HTTP-01 issuance; its cron script uses webroot renewal and reload. Certificates have domain-specific persistent directories. Port-80 ACME access is required for issuance and renewal. The legacy manager timer is retired only after a successful transition. See [web access](web-access.md) for Windows NAT forwarding, UAC, ownership checks and recovery.
 
 Every access switch backs up state/.env/Compose/nginx config, changes only the access
 keys in an existing .env, recreates containers,
 clears Laravel config cache, checks nginx and waits for health. Failed changes restore
 the exact previous configuration files. If recovery itself fails, the error identifies
 the backup and an access-recovery-required phase prevents automatic Start/update.
-Old certificates remain private for recovery. Public DNS, host firewall and router NAT
-are not silently changed; Windows forwarding, LAN/public reachability and real ACME
-issuance require end-to-end acceptance checks.
+Old certificates remain private for recovery. Public IP/Domain selection prepares only
+manager-owned Windows IPv4 forwarding/firewall rules through UAC. Public DNS, router
+NAT and upstream firewall policies remain external prerequisites; LAN/public
+reachability and real ACME issuance require end-to-end acceptance checks.
 
 ## Interface languages
 

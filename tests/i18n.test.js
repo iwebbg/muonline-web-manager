@@ -57,3 +57,11 @@ test('SQL uninstall outcomes translate progress and recovery instructions in bot
   assert.match(translateMessage('bg', error), /Web база: изтрит; web login: запазен/);
   assert.match(translateMessage('bg', 'SQL cleanup incomplete: code=command_unavailable; database=unknown; login=unknown'), /app:database:uninstall/);
 });
+
+
+test('website network refusal messages preserve EN and translate the nested BG cause', () => {
+  const message = 'Windows web access setup failed: A required web port is already used by another Windows service. Stop that service or use a separate hosting machine.';
+  assert.equal(translateMessage('en', message), message);
+  assert.match(translateMessage('bg', message), /Необходим web порт/);
+  assert.match(translateMessage('bg', 'The web release lacks Laravel production nginx files. Publish a compatible signed web release before using Domain + SSL.'), /подписан web release/);
+});

@@ -316,13 +316,13 @@ def access_settings(settings):
     return {'mode': mode, 'host': host, 'email': settings.get('email', ''), 'url': ('https://' if mode == 'domain' else 'http://') + url_host}
 
 
-def nginx_config(access, tls=False):
-    """Generate an injection-safe nginx virtual host and ACME webroot."""
+def nginx_config(access):
+    """Retain the tested Local/IP proxy; domain TLS belongs to the signed Laravel release."""
+    if access['mode'] == 'domain':
+        return '# Domain + SSL uses docker/nginx/prod from the installed Laravel release.\n'
     host = access['host']
     if ':' in host:
         host = '[' + host + ']'
-    if access['mode'] == 'domain' and not tls:
-        return 'server { listen 80; server_name ' + host + '; location ^~ /.well-known/acme-challenge/ { root /var/www/certbot; } location / { return 503; } }\n'
     common = '''
     root /var/www/html/public;
     index index.php;
@@ -342,11 +342,16 @@ def nginx_config(access, tls=False):
     location ~ \\.php$ { deny all; }
     location ~ /\\. { deny all; }
 '''
-    if tls:
-        return ('server { listen 80; server_name ' + host + '; location ^~ /.well-known/acme-challenge/ { root /var/www/certbot; } location / { return 301 https://$host$request_uri; } }\n'
-                + 'server { listen 443 ssl; server_name ' + host + ';\nssl_certificate /etc/letsencrypt/live/' + host + '/fullchain.pem;\nssl_certificate_key /etc/letsencrypt/live/' + host + '/privkey.pem;\nssl_protocols TLSv1.2 TLSv1.3;\n'
-                + common.replace('HTTPS_VALUE', 'on') + '}\n')
     return 'server { listen 80; server_name ' + host + ';\n' + common.replace('HTTPS_VALUE', 'off') + '}\n'
+
+
+DOMAIN_NGINX_FILES = ('docker/nginx/prod/Dockerfile', 'docker/nginx/prod/default.conf.template', 'docker/nginx/prod/startup.sh', 'docker/nginx/prod/certbot-renew.sh')
+
+
+def validate_domain_nginx(directory):
+    """Do not silently substitute manager SSL scripts when a web release lacks its contract."""
+    for relative in DOMAIN_NGINX_FILES:
+        require((directory / relative).is_file(), 'The web release lacks Laravel production nginx files. Publish a compatible signed web release before using Domain + SSL.')
 
 
 def compose_config(access):
@@ -362,9 +367,18 @@ def compose_config(access):
     binding = '127.0.0.1:' if access['mode'] == 'local' else ''
     services['nginx'] = {'image': 'nginx:1.29-alpine', 'restart': 'unless-stopped', 'ports': [binding + '80:80'] + ([binding + '443:443'] if access['mode'] == 'domain' else []), 'volumes': [mount + ':ro', str(ROOT / 'nginx.conf') + ':/etc/nginx/conf.d/default.conf:ro', str(ROOT / 'acme') + ':/var/www/certbot:ro', str(ROOT / 'certificates') + ':/etc/letsencrypt:ro'], 'depends_on': {'app': {'condition': 'service_healthy'}}, 'healthcheck': {'test': ['CMD-SHELL', 'wget -q --spider http://127.0.0.1/up'], 'interval': '10s', 'timeout': '5s', 'retries': 15}}
     if access['mode'] == 'domain':
-        services['nginx']['healthcheck']['test'] = ['CMD-SHELL', 'wget -q --spider --no-check-certificate https://127.0.0.1/up']
+        # Reuse the release's Dockerfile, template, standalone startup and cron renewal.
+        # The read-only runtime mount serves the shipped build/uploads/custom themes.
+        services['nginx'] = {
+            'build': {'context': str(APP), 'dockerfile': 'docker/nginx/prod/Dockerfile'},
+            'image': 'muonline-manager-nginx:local', 'restart': 'unless-stopped',
+            'environment': {'APP_DOMAIN': access['host'], 'NGINX_SSL_EMAIL': access['email']},
+            'ports': ['80:80', '443:443'],
+            'volumes': [mount + ':ro', str(ROOT / 'acme') + ':/var/www/certbot', str(ROOT / 'certificates') + ':/etc/letsencrypt', str(ROOT / 'nginx-logs') + ':/var/log/nginx'],
+            'depends_on': {'app': {'condition': 'service_healthy'}},
+            'healthcheck': {'test': ['CMD-SHELL', 'curl --fail --silent --insecure --header "Host: $$APP_DOMAIN" https://127.0.0.1/up >/dev/null'], 'start_period': '30s', 'interval': '10s', 'timeout': '5s', 'retries': 20}
+        }
     services['redis'] = {'image': 'redis:8-alpine', 'restart': 'unless-stopped', 'command': ['redis-server', '--appendonly', 'yes'], 'volumes': ['redis-data:/data'], 'healthcheck': {'test': ['CMD', 'redis-cli', 'ping'], 'interval': '5s', 'timeout': '3s', 'retries': 20}}
-    services['certbot'] = {'image': 'certbot/certbot:v4.0.0', 'profiles': ['tools'], 'volumes': [str(ROOT / 'acme') + ':/var/www/certbot', str(ROOT / 'certificates') + ':/etc/letsencrypt']}
     return {'services': services, 'volumes': {'redis-data': {}}}
 
 
@@ -467,7 +481,7 @@ def apply_game_writes(state, settings):
         raise RuntimeError('Game write change failed; previous configuration restored. Backup: ' + str(backup)) from None
 
 
-def write_configuration(state, tls=False, preserve_environment=False):
+def write_configuration(state, preserve_environment=False, domain_startup=False):
     """Write the site environment, reverse proxy and Docker project together."""
     access = state['access']
     access_environment = dict(APP_URL=access['url'], SESSION_SECURE_COOKIE=str(access['mode'] == 'domain').lower(), SESSION_DOMAIN='null', SESSION_HTTP_ONLY='true', SESSION_SAME_SITE='lax')
@@ -480,9 +494,13 @@ def write_configuration(state, tls=False, preserve_environment=False):
     else:
         atomic(environment_file, env_text({**state['environment'], **access_environment}))
     os.chown(APP / '.env', 33, 33)
-    atomic(ROOT / 'nginx.conf', nginx_config(access, tls))
+    atomic(ROOT / 'nginx.conf', nginx_config(access))
     os.chmod(ROOT / 'nginx.conf', 0o644)
-    atomic(COMPOSE, json.dumps(compose_config(access), indent=2))
+    project = compose_config(access)
+    if domain_startup and access['mode'] == 'domain':
+        # A refused first challenge must not restart-loop against the public CA.
+        project['services']['nginx']['restart'] = 'no'
+    atomic(COMPOSE, json.dumps(project, indent=2))
 
 
 def restore_access_configuration(backup):
@@ -544,6 +562,8 @@ def stage_release(request):
             safe_extract(archive, staging, kind)
         for relative in ('artisan', 'vendor/autoload.php', 'public/build/manifest.json', 'config/game.php', 'docker/php/Dockerfile'):
             require((staging / relative).is_file(), 'Incomplete runtime release: ' + relative)
+        if request.get('settings', {}).get('access', {}).get('mode') == 'domain' or (STATE.exists() and load_state().get('access', {}).get('mode') == 'domain'):
+            validate_domain_nginx(staging)
         registry = (staging / 'config/game.php').read_text()
         section = re.search(r"'version_profiles'\s*=>\s*\[(.*?)\]", registry, re.S)
         require(section is not None, 'Laravel game profile registry is missing.')
@@ -844,7 +864,7 @@ def install(request):
     state['themeHashes'] = theme_hashes(staging)
     staging.rename(APP)
     initialize_storage()
-    for directory in ('acme', 'certificates', 'backups'):
+    for directory in ('acme', 'certificates', 'backups', 'nginx-logs'):
         (ROOT / directory).mkdir(exist_ok=True)
     os.chmod(ROOT / 'acme', 0o755)
     write_configuration(state)
@@ -892,14 +912,10 @@ def finish_install(state, credentials):
         state['phase'] = 'administrator-created'
         save_state(state)
     # Initial IP mode was already explicitly confirmed before the installation state was saved.
-    apply_access(state, {**state['access'], 'httpAcknowledged': state['access']['mode'] == 'ip'}, initial=True)
+    requested_access = credentials.get('access', {**state['access'], 'httpAcknowledged': state['access']['mode'] == 'ip'})
+    apply_access(state, requested_access, initial=True)
     save_state(dict(state, phase='ready'))
     return 'Installation complete. Bootstrap credentials removed. Game writes remain disabled.'
-
-
-def issue_certificate(access):
-    """Obtain a domain-specific certificate through the HTTP-01 webroot challenge."""
-    compose('run', '--rm', 'certbot', 'certonly', '--webroot', '-w', '/var/www/certbot', '--non-interactive', '--agree-tos', '--email', access['email'], '-d', access['host'], '--keep-until-expiring')
 
 
 def renewal_timer(enabled):
@@ -916,6 +932,8 @@ def renewal_timer(enabled):
 def apply_access(state, settings, initial=False):
     """Back up access configuration and restore it when nginx, ACME or health checks fail."""
     access = access_settings(settings)
+    if access['mode'] == 'domain':
+        validate_domain_nginx(APP)
     previous = json.loads(json.dumps(state))
     backup = ROOT / 'backups' / ('access-' + datetime.datetime.now(datetime.UTC).strftime('%Y%m%dT%H%M%S') + '-' + secrets.token_hex(3))
     backup.mkdir(parents=True)
@@ -925,21 +943,30 @@ def apply_access(state, settings, initial=False):
     state['access'] = access
     save_state(dict(previous, phase='access-changing'))
     try:
-        write_configuration(state)
-        compose('up', '-d', '--force-recreate', 'app', 'queue', 'scheduler', 'nginx')
+        write_configuration(state, domain_startup=True)
         if access['mode'] == 'domain':
-            issue_certificate(access)
-            write_configuration(state, tls=True)
-            compose('up', '-d', '--force-recreate', 'nginx')
-            compose('exec', '-T', 'nginx', 'nginx', '-t')
-            renewal_timer(True)
-        elif RENEWAL_TIMER.exists():
-            renewal_timer(False)
+            (ROOT / 'nginx-logs').mkdir(exist_ok=True)
+            compose('build', 'nginx')
+        # Release nginx startup owns standalone port 80 until the certificate exists.
+        compose('stop', 'nginx')
+        compose('up', '-d', '--force-recreate', 'app', 'queue', 'scheduler', 'nginx')
         compose('exec', '-T', 'app', 'php', 'artisan', 'config:clear', '--no-interaction')
         compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
         compose('exec', '-T', 'nginx', 'nginx', '-t')
+        if access['mode'] == 'domain':
+            # The first healthy container proves the certificate exists. Only now
+            # enable the normal service restart policy (startup reuses that certificate).
+            write_configuration(state, preserve_environment=True)
+            compose('up', '-d', '--no-deps', '--force-recreate', '--wait', '--wait-timeout', '300', 'nginx')
+            compose('exec', '-T', 'nginx', 'nginx', '-t')
+        if RENEWAL_TIMER.exists():
+            renewal_timer(False)  # Retire only the old manager timer; Laravel cron now owns renewal.
         save_state(state)
     except Exception:
+        # Startup Certbot runs inside the release nginx container; preserve its
+        # redacted challenge/refusal output before recovery replaces that container.
+        with contextlib.suppress(Exception):
+            compose('logs', '--no-color', '--tail', '80', 'nginx', allow_failure=True)
         state.clear()
         state.update(previous)
         try:
@@ -951,10 +978,9 @@ def apply_access(state, settings, initial=False):
                 compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
                 compose('exec', '-T', 'app', 'php', 'artisan', 'config:clear', '--no-interaction')
                 compose('restart', 'app', 'queue', 'scheduler')
-                if previous['access']['mode'] == 'domain':
+                legacy_compose = json.loads((backup / COMPOSE.name).read_text())
+                if previous['access']['mode'] == 'domain' and 'certbot' in legacy_compose.get('services', {}):
                     renewal_timer(True)
-                elif RENEWAL_TIMER.exists():
-                    renewal_timer(False)
         except Exception:
             with contextlib.suppress(Exception):
                 save_state(dict(previous, phase='access-recovery-required', backup=str(backup)))
@@ -1047,6 +1073,7 @@ def update(request):
     staging = stage_release(request)
     old = ROOT / ('previous-' + state['version'] + '-' + secrets.token_hex(4))
     migration_started = False
+    configuration_before = {file: file.read_bytes() for file in (STATE, COMPOSE, ROOT / 'nginx.conf') if file.exists()}
     backup_path = None
     save_state(dict(state, phase='updating', attemptedVersion=version))
     try:
@@ -1064,14 +1091,16 @@ def update(request):
         APP.rename(old)
         staging.rename(APP)
         initialize_storage()
-        write_configuration(state, tls=state['access']['mode'] == 'domain', preserve_environment=True)
-        compose('build', 'app')
+        write_configuration(state, preserve_environment=True)
+        compose('build', 'app', *(['nginx'] if state['access']['mode'] == 'domain' else []))
         save_state(dict(state, phase='migration-recovery-required', attemptedVersion=version, backup=backup_path))
         migration_started = True
         compose('run', '--rm', '--no-deps', 'app', 'php', 'artisan', 'migrate', '--force', '--no-interaction')
         compose('run', '--rm', '--no-deps', 'app', 'php', 'artisan', 'optimize:clear', '--no-interaction')
         compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
         compose('exec', '-T', 'app', 'php', 'artisan', 'up', '--no-interaction')
+        if RENEWAL_TIMER.exists():
+            renewal_timer(False)
         state['version'] = version
         state['themeHashes'] = next_theme_hashes
         save_state(state)
@@ -1086,8 +1115,10 @@ def update(request):
                     failed = ROOT / ('failed-' + secrets.token_hex(4))
                     APP.rename(failed)
                 old.rename(APP)
-                write_configuration(state, tls=state['access']['mode'] == 'domain', preserve_environment=True)
-                compose('build', 'app')
+                for file, content in configuration_before.items():
+                    atomic(file, content)
+                old_services = json.loads(COMPOSE.read_text()).get('services', {})
+                compose('build', 'app', *(['nginx'] if old_services.get('nginx', {}).get('build') else []))
             compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
             compose('exec', '-T', 'app', 'php', 'artisan', 'up', '--no-interaction')
             save_state(state)
@@ -1164,6 +1195,8 @@ def uninstall_database(details):
 def dispatch(request):
     """Expose an explicit runtime operation allow-list, with no arbitrary command endpoint."""
     action = request.get('action')
+    if action == 'validateAccess':
+        return access_settings(request.get('access', {}))
     if action == 'runtimeLogs':
         return runtime_logs()
     if action == 'developmentLogs' or (action == 'logs' and DEVELOPMENT_DIAGNOSTICS):

@@ -197,7 +197,7 @@ journal spanning Docker, filesystem and SQL.
 
 NSIS removes the panel only. Stop the project and export backups before separately
 removing runtime data. The Windows task can be disabled/removed in Task Scheduler
-(`MuOnline-Web-WSL`); certificate renewal uses `muonline-certificates.timer` in WSL.
+(`MuOnline-Web-WSL`); new Domain deployments renew through the Laravel nginx container's cron. The old `muonline-certificates.timer` is retained only for restoring legacy configurations.
 SQL databases/logins, Docker volumes and Ubuntu are never deleted by NSIS panel uninstall.
 No cleanup command here authorizes deleting a user's game data.
 
@@ -368,3 +368,13 @@ rediscovers that same instance after a WSL gateway change. Verified replacements
 are saved back to the draft. External SQL endpoints are not silently redirected;
 an externally changed IP must be corrected by the operator. Ready deployments are
 not automatically retargeted by editing an installation draft.
+
+
+## Laravel nginx and Windows public access
+
+See [web access](web-access.md) for the signed-release nginx contract, legacy migration,
+certificate preservation, owned-only Windows forwarding/firewall/task preparation and
+recovery boundaries. Do not delete the public network journal to bypass an incomplete
+setup. A missing release contract requires a compatible signed web release; it does
+not require dropping SQL databases or resetting WSL. Router/DNS/Cloudflare reachability
+remain separately verified.

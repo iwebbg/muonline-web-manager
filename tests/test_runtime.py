@@ -137,14 +137,54 @@ class RuntimeTests(unittest.TestCase):
         access = worker.access_settings({'mode': 'ip', 'host': '2001:db8::1', 'httpAcknowledged': True})
         self.assertEqual(access['url'], 'http://[2001:db8::1]')
 
-    def test_domain_does_not_serve_the_site_before_certificate_is_ready(self):
+    def domain_release(self):
+        for relative in worker.DOMAIN_NGINX_FILES:
+            file = worker.APP / relative
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text('# signed release fixture')
+
+    def test_domain_uses_release_nginx_and_cron_without_manager_certbot_or_template(self):
         access = worker.access_settings({'mode': 'domain', 'host': 'mu.example.com', 'email': 'owner@example.com'})
-        challenge_config = worker.nginx_config(access, tls=False)
-        self.assertIn('return 503', challenge_config)
-        self.assertNotIn('fastcgi_pass', challenge_config)
-        tls_config = worker.nginx_config(access, tls=True)
-        self.assertIn('/live/mu.example.com/fullchain.pem', tls_config)
-        self.assertIn('fastcgi_param HTTPS on', tls_config)
+        config = worker.compose_config(access)
+        nginx = config['services']['nginx']
+        self.assertEqual(nginx['build']['dockerfile'], 'docker/nginx/prod/Dockerfile')
+        self.assertEqual(nginx['environment'], {'APP_DOMAIN': 'mu.example.com', 'NGINX_SSL_EMAIL': 'owner@example.com'})
+        self.assertEqual(nginx['ports'], ['80:80', '443:443'])
+        self.assertNotIn('certbot', config['services'])
+        self.assertFalse(any('/etc/nginx/conf.d' in value for value in nginx['volumes']))
+        self.assertIn('$$APP_DOMAIN', nginx['healthcheck']['test'][1])
+        self.assertNotIn('APP_ENV', config['services']['app']['environment'])
+        self.assertNotIn('listen', worker.nginx_config(access))
+
+    def test_domain_builds_release_nginx_before_stopping_old_proxy_and_retires_legacy_timer_only_after_health(self):
+        self.domain_release()
+        worker.RENEWAL_TIMER.write_text('old timer')
+        certificate = self.root / 'certificates/live/old.example.test/fullchain.pem'
+        certificate.parent.mkdir(parents=True)
+        certificate.write_text('existing certificate')
+        order = []
+        def compose(*args, **kwargs):
+            order.append(args)
+            if args == ('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300'):
+                self.assertEqual(json.loads(worker.COMPOSE.read_text())['services']['nginx']['restart'], 'no', 'First certificate refusal must not restart-loop against ACME')
+            return ''
+        with patch.object(worker, 'compose', side_effect=compose), patch.object(worker, 'renewal_timer', side_effect=lambda enabled: order.append(('timer', enabled))), patch.object(worker.os, 'chown', create=True):
+            worker.apply_access(self.state, {'mode': 'domain', 'host': 'mu.example.test', 'email': 'owner@example.test'})
+        self.assertLess(order.index(('build', 'nginx')), order.index(('stop', 'nginx')))
+        self.assertLess(order.index(('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')), order.index(('timer', False)))
+        self.assertEqual(certificate.read_text(), 'existing certificate')
+        self.assertNotIn('certbot', json.loads(worker.COMPOSE.read_text())['services'])
+        self.assertEqual(json.loads(worker.COMPOSE.read_text())['services']['nginx']['restart'], 'unless-stopped')
+        self.assertIn('APP_KEY="original-key"', (worker.APP / '.env').read_text())
+        self.assertEqual(worker.load_state()['access']['url'], 'https://mu.example.test')
+
+    def test_domain_requires_release_files_before_changing_installed_configuration(self):
+        original = worker.STATE.read_bytes()
+        with patch.object(worker, 'compose') as compose:
+            with self.assertRaisesRegex(ValueError, 'compatible signed web release'):
+                worker.apply_access(self.state, {'mode': 'domain', 'host': 'mu.example.com', 'email': 'owner@example.com'})
+        compose.assert_not_called()
+        self.assertEqual(worker.STATE.read_bytes(), original)
 
     def test_zip_rejects_traversal_symlinks_and_mutable_runtime_files(self):
         for name in ['../escape', '/etc/passwd', '.env', 'storage/app/public/upload', 'vendor/autoload.php', 'a\\b', 'C:/escape', 'public/file\x00suffix']:
@@ -314,12 +354,25 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(worker.load_state()['phase'], 'ready')
         self.assertEqual(worker.load_state()['access']['mode'], 'ip')
 
-    def test_failed_initial_domain_access_disables_newly_enabled_renewal_timer(self):
+    def test_pending_install_can_resume_with_local_access_after_domain_refusal(self):
+        self.state['access'] = worker.access_settings({'mode': 'domain', 'host': 'mu.example.test', 'email': 'owner@example.test'})
+        self.state['phase'] = 'administrator-created'
+        worker.save_state(self.state)
+        with patch.object(worker, 'compose', return_value=''), patch.object(worker, 'diagnose_sql', return_value={'passed': True}), patch.object(worker.os, 'chown', create=True):
+            worker.finish_install(self.state, {'access': {'mode': 'local'}})
+        saved = worker.load_state()
+        self.assertEqual(saved['phase'], 'ready')
+        self.assertEqual(saved['access']['mode'], 'local')
+        self.assertIn('127.0.0.1:80:80', json.loads(worker.COMPOSE.read_text())['services']['nginx']['ports'])
+
+    def test_failed_initial_domain_access_restores_configuration_and_disables_legacy_timer(self):
+        self.domain_release()
         self.state['access'] = worker.access_settings({'mode': 'domain', 'host': 'mu.example.com', 'email': 'owner@example.com'})
         worker.save_state(self.state)
         with patch.object(worker.os, 'chown', create=True):
             worker.write_configuration(self.state)
         original = (worker.APP / '.env').read_bytes()
+        worker.RENEWAL_TIMER.write_text('legacy unit')
         changes = []
 
         def timer(enabled):
@@ -331,10 +384,10 @@ class RuntimeTests(unittest.TestCase):
                 raise RuntimeError('new runtime unhealthy')
             return ''
 
-        with patch.object(worker, 'compose', side_effect=compose), patch.object(worker, 'issue_certificate'), patch.object(worker, 'renewal_timer', side_effect=timer), patch.object(worker.os, 'chown', create=True):
+        with patch.object(worker, 'compose', side_effect=compose), patch.object(worker, 'renewal_timer', side_effect=timer), patch.object(worker.os, 'chown', create=True):
             with self.assertRaisesRegex(RuntimeError, 'Initial access setup failed'):
                 worker.apply_access(self.state, self.state['access'], initial=True)
-        self.assertEqual(changes, [True, False])
+        self.assertEqual(changes, [False])
         self.assertEqual((worker.APP / '.env').read_bytes(), original)
 
     def test_access_recovery_failure_blocks_start_and_preserves_backup_reference(self):
@@ -474,6 +527,10 @@ class RuntimeTests(unittest.TestCase):
             file = runtime / relative
             file.parent.mkdir(parents=True, exist_ok=True)
             file.write_text(contents)
+        for relative in worker.DOMAIN_NGINX_FILES:
+            file = runtime / relative
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text('# signed nginx contract')
         output = self.root / 'release'
         (runtime / '.git').write_text('gitdir: private-worktree-metadata')
         manifest = packager.package(runtime, output, '1.3.0', 'https://cdn.interweb.bg')

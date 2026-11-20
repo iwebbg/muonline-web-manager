@@ -24,7 +24,7 @@ reproducible unless all upstream build inputs are pinned as well.
 
 Outputs:
 
-- `application.zip`: Laravel application, Docker PHP files and compiled public/build.
+- `application.zip`: Laravel application, Docker PHP files, all four `docker/nginx/prod` contract files and compiled public/build.
 - `vendor.zip`: production vendor directory, with its top-level vendor/ prefix.
 - `manifest.json`: schema, kind, version, compatibility, actual game profile keys,
   absolute artifact URLs, sizes and SHA256 hashes.
@@ -194,3 +194,10 @@ electron-builder has loaded MUI2. Do not move functions using MUI_HEADER_TEXT to
 top-level custom include: that include is evaluated before MUI2 during the full
 installer build. The compiler test follows this order and covers complete installer
 and uninstaller templates, in addition to isolated page/language contracts.
+
+
+Domain + SSL now builds and runs the production nginx implementation from this signed
+web archive. Packaging rejects missing production nginx files; the manager refuses a
+Domain transition if the installed/staged release lacks them. Existing CDN releases
+have not been republished by this change. Verify archive contents or prepare a new
+signed web version before Domain testing. See [web access](web-access.md).

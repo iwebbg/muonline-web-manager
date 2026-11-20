@@ -1,3 +1,4 @@
+import { WebNetwork } from './web-network.js';
 import { readFile, writeFile, rename, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -35,6 +36,7 @@ export class Backend {
     this.busy = false;
     this.sql = new SqlTroubleshooter(resources, userData, this.runner, undefined, profile);
     this.sqlReport = null;
+    this.web = new WebNetwork(resources, userData, this.runner, profile);
   }
 
   /** Read public feed settings without storing SQL or administrator credentials. */
@@ -342,9 +344,18 @@ exit 0
             await this.activeLog?.append('Automatic local SQL endpoint: ' + JSON.stringify(resolvedSqlEndpoint));
           }
         }
-        const provision = () => {
+        const provision = async () => {
+          let networkTicket;
+          const access = request.settings.access ?? state.access ?? { mode: 'local' };
+          if (access.mode !== 'local') await this.runtime({ action: 'validateAccess', access });
+          networkTicket = await this.setup.run('webNetwork', () => this.web.configure(access));
           bootstrapAttempted = pending;
-          return state.installed ? this.runtime({ action: 'resumeInstall', settings: request.settings }) : this.deploy('install', request);
+          try {
+            return await this.setup.run('application', () => state.installed ? this.runtime({ action: 'resumeInstall', settings: request.settings }) : this.deploy('install', request));
+          } catch (error) {
+            try { await this.web.restore(networkTicket); } catch { error.message += ' Windows web networking could not be restored; check manager-owned port forwarding.'; }
+            throw error;
+          }
         };
         return pending && typeof request.settings.sqlHost === 'string' ? this.setup.run('application', provision) : provision();
       });
@@ -420,6 +431,7 @@ exit 0
           throw new Error('SQL cleanup incomplete: code=' + code + '; database=' + database + '; login=' + login);
         }
       }
+      await this.web.configure({ mode: 'local' });
       const script = "$ErrorActionPreference='Stop'; $task=Get-ScheduledTask | Where-Object { $_.TaskName -eq '" + this.profile.taskName + "' -and $_.TaskPath -eq '\\' }; if($task){ $task | Stop-ScheduledTask; $task | Unregister-ScheduledTask -Confirm:$false }";
       await this.runner('powershell.exe', encodedPowerShell(script), '', 60000);
       if (exists) await this.runner('wsl.exe', ['--unregister', this.profile.distribution], '', 120000);
@@ -616,21 +628,33 @@ exit 0
         case 'resumeInstall':
           return await this.install(input);
         case 'update':
+          await this.web.refresh();
           return await this.deploy(action, input);
         case 'updateManager':
           return await this.updateManager();
         case 'start':
           await this.ensureKeepalive();
+          await this.web.refresh();
           return await this.runtime({ ...input, action });
+        case 'restart':
+          await this.web.refresh();
+          return await this.runtime({ ...input, action });
+        case 'access': {
+          const access = await this.runtime({ action: 'validateAccess', access: input.access });
+          const ticket = await this.web.configure(access);
+          try { return await this.runtime({ action, access }); }
+          catch (error) {
+            try { await this.web.restore(ticket); } catch { error.message += ' Windows web networking could not be restored; check manager-owned port forwarding.'; }
+            throw error;
+          }
+        }
         case 'status':
         case 'stop':
-        case 'restart':
         case 'doctor':
         case 'admin':
         case 'adminList':
         case 'adminUpdate':
         case 'adminDelete':
-        case 'access':
         case 'backup':
           return await this.runtime({ ...input, action });
         default:
