@@ -66,7 +66,12 @@ function Assert-WebOwnership {
                 $process = Get-Process -Id $listener.OwningProcess -ErrorAction Stop
                 # WSL's existing localhost relay is compatible with the documented NAT portproxy setup.
                 $relay = $listener.LocalAddress -in @('127.0.0.1','::1') -and $process.ProcessName -in @('wslhost','wslrelay','wslservice')
-                $ownedProxy = $entries.Count -eq 1 -and $listener.LocalAddress -eq '0.0.0.0' -and $listener.OwningProcess -eq 4
+                # Windows can host portproxy in System or the live IP Helper service.
+                # A matching owned mapping is required in either case; PID alone is not ownership.
+                $proxyService = Get-CimInstance -ClassName Win32_Service -Filter "Name='iphlpsvc'"
+                $proxyPids = @(4)
+                if ($proxyService.State -eq 'Running' -and [int]$proxyService.ProcessId -gt 0) { $proxyPids += [int]$proxyService.ProcessId }
+                $ownedProxy = $entries.Count -eq 1 -and $listener.LocalAddress -eq '0.0.0.0' -and $proxyService.State -eq 'Running' -and $listener.OwningProcess -in $proxyPids
                 if (-not $relay -and -not $ownedProxy) { throw 'A required web port is already used by another Windows service. Stop that service or use a separate hosting machine.' }
             }
         }
@@ -78,7 +83,7 @@ function Test-WebFirewall {
     if (-not $Rule -or $Rule.Group -ne $Group -or $Rule.Enabled -ne 'True' -or $Rule.Action -ne 'Allow' -or $Rule.Direction -ne 'Inbound' -or $Rule.Profile -ne 'Any') { return $false }
     $filters = @($Rule | Get-NetFirewallPortFilter)
     $addresses = @($Rule | Get-NetFirewallAddressFilter)
-    return ($filters.Count -eq 1 -and $filters[0].Protocol -in @('TCP','6') -and [string]$filters[0].LocalPort -eq [string]$Port -and $addresses.Count -eq 1 -and [string]$addresses[0].LocalAddress -eq '0.0.0.0/0' -and [string]$addresses[0].RemoteAddress -eq 'Any')
+    return ($filters.Count -eq 1 -and $filters[0].Protocol -in @('TCP','6') -and [string]$filters[0].LocalPort -eq [string]$Port -and $addresses.Count -eq 1 -and [string]$addresses[0].LocalAddress -eq 'Any' -and [string]$addresses[0].RemoteAddress -eq 'Any')
 }
 
 function Set-WebForwarding {
@@ -94,7 +99,11 @@ function Set-WebForwarding {
         Start-Service -Name iphlpsvc
         foreach ($port in @($After.ports)) {
             Invoke-NativeWebCommand 'netsh.exe' @('interface','portproxy','add','v4tov4','listenaddress=0.0.0.0',('listenport=' + $port),('connectaddress=' + $After.target),('connectport=' + $port)) | Out-Null
-            New-NetFirewallRule -Name ($Group + '-' + $port) -DisplayName ('MuOnline Web TCP ' + $port) -Group $Group -Direction Inbound -Action Allow -Protocol TCP -LocalPort $port -LocalAddress '0.0.0.0/0' -Profile Any | Out-Null
+            New-NetFirewallRule -Name ($Group + '-' + $port) -DisplayName ('MuOnline Web TCP ' + $port) -Group $Group -Direction Inbound -Action Allow -Protocol TCP -LocalPort $port -LocalAddress Any -Profile Any | Out-Null
+            # Verify the effective filter instead of assuming New-NetFirewallRule
+            # preserved an address expression (Windows normalizes 0.0.0.0/0 to 0.0.0.0).
+            $active = Get-NetFirewallRule -PolicyStore ActiveStore -Name ($Group + '-' + $port) -ErrorAction Stop
+            if (-not (Test-WebFirewall $active $port $Group)) { throw 'The web firewall rule could not be verified in active Windows policy. Check firewall policy before retrying.' }
         }
     }
 }
@@ -167,7 +176,7 @@ function Invoke-WebNetwork {
     $proxies = @(Get-WebProxies)
     $healthy = $unchanged
     foreach ($port in @($ports)) {
-        $rule = Get-NetFirewallRule -Name ($group + '-' + $port) -ErrorAction SilentlyContinue
+        $rule = Get-NetFirewallRule -PolicyStore ActiveStore -Name ($group + '-' + $port) -ErrorAction SilentlyContinue
         if (-not ($proxies | Where-Object { $_.port -eq $port -and $_.listen -eq '0.0.0.0' -and $_.target -eq $target -and $_.targetPort -eq $port }) -or -not (Test-WebFirewall $rule $port $group)) { $healthy = $false }
     }
     if ($healthy -and $task -and -not $Refresh) {

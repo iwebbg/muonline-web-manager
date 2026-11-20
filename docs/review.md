@@ -657,3 +657,36 @@ nginx recreation; it failed against the old implementation and passes after the 
 `npm test` passes 90 Node and 80 Python tests; 23 Windows-only tests skip on Linux.
 No UI/preload changes, real certificate issuance, native Windows networking checks,
 Laravel repository modifications or CDN publishing were performed for this fix.
+
+
+### Windows firewall local-address repair (2026-11-21)
+
+The user's native ActiveStore output showed an enabled/enforced TCP 80 allow rule
+with `LocalAddress: 0.0.0.0`, while the intended site was on 192.168.0.104. Profile
+flags allowed inbound/local rules. Windows had normalized our `0.0.0.0/0` expression
+to the literal zero address. The preceding isolated mock incorrectly assumed the
+CIDR string survived unchanged. This concrete evidence supersedes the previous
+claim that the generated firewall filter covered public IPv4 hosts.
+
+The common helper now creates and verifies `LocalAddress Any` / `RemoteAddress Any`
+for its fixed TCP ports, including repair of already-created zero-address rules.
+Effective ActiveStore filters are checked after creation instead of declaring success
+solely from the creation call. The same helper is used by Install/Resume, Access &
+SSL, Start/Restart refresh and the protected periodic task. Script hash checks replace
+the installed old refresh helper when the new manager performs configuration.
+
+The user also reported a public listener PID other than 4. Ownership recognition now
+requires an exact matching owned proxy plus either System or the live, running IP
+Helper service PID measured from Win32_Service. It does not accept arbitrary PIDs or
+process names. The mock exercises service-hosted PID 3676, System-hosted portproxy,
+foreign owner refusal, native zero-address repair, inactive policy recovery and old
+refresh script replacement. All OS effects remain mocked in these automated checks.
+The user's actual PID-to-service mapping and successful LAN/ACME access after repair
+remain to be confirmed; the output alone does not prove which process owns PID 3676.
+
+Validation for this repair: `npm test` passes 91 Node and 80 Python tests, with 23
+Windows-only checks skipped on Linux. The enhanced PowerShell contract passes in
+the network-isolated PowerShell container with all native effects mocked. A shared
+backend regression covers Install/Resume/Access for Local/IP→Domain transitions.
+The proposed one-rule manual Any repair and subsequent LAN/ACME results have not
+yet been reported by the user; no native success is inferred from these mocks.

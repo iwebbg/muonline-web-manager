@@ -76,3 +76,31 @@ test('PowerShell web helper protects conflicts, retries and owned-only cleanup',
   });
   assert.match(output, /PASS: Windows web network contracts/);
 });
+
+
+test('Install, Resume and Access use the common web preparation when Local/IP becomes Domain', async () => {
+  for (const initialMode of ['local', 'ip']) {
+    for (const action of ['install', 'resumeInstall', 'access']) {
+      await fixture(async directory => {
+        const backend = new Backend(process.cwd(), directory);
+        backend.requireWindows = () => {};
+        backend.ensureEnvironment = async () => {};
+        const requested = { mode: 'domain', host: 'mu.example.test', email: 'owner@example.test' };
+        const order = [];
+        let complete = false;
+        backend.runtime = async request => {
+          if (request.action === 'status' && complete) return { installed: true, phase: 'ready', access: requested };
+          if (request.action === 'status') return { installed: action !== 'install', phase: action === 'access' ? 'ready' : 'administrator-created', access: { mode: initialMode } };
+          if (request.action === 'validateAccess') { order.push('validate'); return requested; }
+          if (request.action === 'access' || request.action === 'resumeInstall') { order.push('application'); complete = true; return 'Complete'; }
+          throw new Error('Unexpected runtime action');
+        };
+        backend.deploy = async () => { order.push('application'); complete = true; return 'Complete'; };
+        backend.web.configure = async access => { assert.deepEqual(access, requested); order.push('network'); return { changed: true, previousMode: initialMode }; };
+        backend.web.restore = async () => { throw new Error('Successful access must not restore'); };
+        await backend.invoke(action, action === 'access' ? { access: requested } : { settings: { access: requested } });
+        assert.deepEqual(order, ['validate', 'network', 'application'], initialMode + ' → Domain through ' + action);
+      });
+    }
+  }
+});

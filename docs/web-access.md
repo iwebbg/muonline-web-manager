@@ -83,8 +83,14 @@ issued can still fail. The manager does not change Cloudflare settings.
 Preparation uses UAC and argv arrays. Only mode/profile enter its temporary JSON
 request; no domain, SQL identity, password, arbitrary command or port is forwarded.
 Existing non-manager proxies, foreign listeners and rule/task name collisions are
-refused before mutations. Firewall rules are limited to the fixed TCP ports and IPv4 local addresses
-(`0.0.0.0/0`); exact direction, port, protocol and address filters are verified.
+refused before mutations. Firewall rules use the fixed TCP ports with `LocalAddress Any` and `RemoteAddress Any`
+for the selected public mode. `0.0.0.0` is only the portproxy listen address; it must
+not be used as the firewall local-address filter. Windows was observed normalizing
+`0.0.0.0/0` to the literal `0.0.0.0`, which did not match the Windows LAN address.
+Exact direction, port, protocol and address filters are verified in ActiveStore
+after creation and on refresh. Existing incorrect owned filters are repaired.
+A matching owned proxy can be hosted by System or the currently running IP Helper
+service PID; a fixed PID is not assumed. Foreign listener ownership is still refused.
 The helper may start Windows IP Helper (`iphlpsvc`) for
 portproxy; it does not disable Windows Firewall, rewrite unrelated rules, or expose
 SQL. Existing WSL localhost relay listeners are distinguished from foreign services.

@@ -2,6 +2,7 @@ import { resolveLocale, translate } from './i18n.js';
 
 /** Known application messages only. Arbitrary logs and SQL diagnostics are not translated. */
 const bulgarian = {
+  "The web firewall rule could not be verified in active Windows policy. Check firewall policy before retrying.": "Web firewall правилото не може да бъде потвърдено в активната Windows политика. Провери firewall политиката преди повторен опит.",
   "The web release lacks Laravel production nginx files. Publish a compatible signed web release before using Domain + SSL.": "Web release-ът няма нужните Laravel production nginx файлове. Публикувай съвместим подписан web release преди Domain + SSL.",
   "Windows web access setup did not complete. Accept the UAC request and inspect the support log before retrying.": "Настройването на Windows достъпа до сайта не завърши. Потвърди UAC заявката и провери support лога преди повторен опит.",
   "Previous Windows web access setup is incomplete. Retry installation or Access settings before starting.": "Предишната настройка на Windows достъпа до сайта е недовършена. Повтори инсталацията или настройките за достъп преди стартиране.",

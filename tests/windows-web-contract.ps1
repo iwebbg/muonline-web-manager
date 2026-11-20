@@ -20,6 +20,9 @@ $script:effects = 0
 $script:conflict = $false
 $script:failRule = $false
 $script:mode = 'nat'
+$script:proxyPid = 3676
+$script:listenerPid = 3676
+$script:inactiveRule = $false
 function Get-WebOwner { 'S-1-5-21-111-222-333-1000' }
 function Get-Acl { param($LiteralPath) $value=New-Object psobject; $value | Add-Member ScriptMethod GetOwner { param($Type) [pscustomobject]@{Value='S-1-5-32-544'} }; return $value }
 function Protect-WebDirectory { param($Directory) New-Item -ItemType Directory -Path $Directory -Force | Out-Null }
@@ -46,17 +49,18 @@ function Invoke-NativeWebCommand {
     }
     return ''
 }
-function Get-NetFirewallRule { param($Name) if ($script:rules.ContainsKey($Name)) { return $script:rules[$Name] } }
+function Get-NetFirewallRule { param($Name,$PolicyStore) if ($PolicyStore -eq 'ActiveStore' -and $script:inactiveRule) { return $null }; if ($script:rules.ContainsKey($Name)) { return $script:rules[$Name] } }
 function New-NetFirewallRule {
     param($Name,$DisplayName,$Group,$Direction,$Action,$Protocol,$LocalPort,$LocalAddress,$Profile)
-    Assert ($Protocol -eq 'TCP' -and $LocalPort -in @(80,443) -and $LocalAddress -eq '0.0.0.0/0') 'Only fixed TCP web ports are allowed'
+    Assert ($Protocol -eq 'TCP' -and $LocalPort -in @(80,443) -and $LocalAddress -eq 'Any') 'Only fixed TCP web ports are allowed'
     if ($script:failRule -and $LocalPort -eq 443) { $script:failRule=$false; throw 'Fixture firewall refusal' }
-    $script:rules[$Name]=[pscustomobject]@{Name=$Name;Group=$Group;Enabled='True';Action=$Action;Direction=$Direction;Profile=$Profile}
+    $script:rules[$Name]=[pscustomobject]@{Name=$Name;Group=$Group;Enabled='True';Action=$Action;Direction=$Direction;Profile=$Profile;LocalAddress=$(if ($LocalAddress -eq '0.0.0.0/0') { '0.0.0.0' } else { $LocalAddress })}
 }
 function Get-NetFirewallPortFilter { param([Parameter(ValueFromPipeline)]$InputObject) process { [pscustomobject]@{Protocol='TCP';LocalPort=([string]$InputObject.Name -split '-')[-1]} } }
-function Get-NetFirewallAddressFilter { param([Parameter(ValueFromPipeline)]$InputObject) process { [pscustomobject]@{LocalAddress='0.0.0.0/0';RemoteAddress='Any'} } }
+function Get-NetFirewallAddressFilter { param([Parameter(ValueFromPipeline)]$InputObject) process { [pscustomobject]@{LocalAddress=$InputObject.LocalAddress;RemoteAddress='Any'} } }
 function Remove-NetFirewallRule { param([Parameter(ValueFromPipeline)]$InputObject) process { $script:rules.Remove($InputObject.Name) } }
-function Get-NetTCPConnection { param($State,$LocalPort) if ($script:conflict) { [pscustomobject]@{LocalAddress='0.0.0.0';OwningProcess=999} } }
+function Get-NetTCPConnection { param($State,$LocalPort) if ($script:conflict) { [pscustomobject]@{LocalAddress='0.0.0.0';OwningProcess=999} } elseif (@($script:proxies | Where-Object { $_.port -eq $LocalPort }).Count) { [pscustomobject]@{LocalAddress='0.0.0.0';OwningProcess=$script:listenerPid} } }
+function Get-CimInstance { param($ClassName,$Filter) Assert ($ClassName -eq 'Win32_Service' -and $Filter -eq "Name='iphlpsvc'") 'Only IP Helper ownership may be queried'; [pscustomobject]@{State='Running';ProcessId=$script:proxyPid} }
 function Get-Process { param($Id) [pscustomobject]@{ProcessName='UnrelatedServer'} }
 function Start-Service { param($Name) Assert ($Name -eq 'iphlpsvc') 'Only IP Helper may be started' }
 function Get-ScheduledTask { param($TaskName) if ($script:tasks.ContainsKey($TaskName)) { $script:tasks[$TaskName] } }
@@ -73,12 +77,32 @@ try {
     try { Invoke-WebNetwork @{profile='production';mode='domain'}; throw 'Expected service conflict' } catch { Assert ($_.Exception.Message -like '*already used*') 'A foreign listener must refuse configuration' }
     Assert ($script:effects -eq 0) 'Conflict must precede all changes'
     $script:conflict=$false
+    $script:inactiveRule=$true
+    try { Invoke-WebNetwork @{profile='production';mode='domain'}; throw 'Expected inactive firewall refusal' } catch { Assert ($_.Exception.Message -like '*active Windows policy*') 'A stored but inactive rule must not be reported as ready' }
+    Assert ($script:proxies.Count -eq 0 -and $script:rules.Count -eq 0) 'Inactive policy must restore the initial local exposure'
+    $script:inactiveRule=$false
     $result=Invoke-WebNetwork @{profile='production';mode='domain'}
     Assert ($result.changed -and $result.previousMode -eq 'local') 'Initial domain setup'
     Assert ($script:proxies.Count -eq 2 -and $script:rules.Count -eq 2) 'Both fixed ports must be prepared'
     $count=$script:effects
     $result=Invoke-WebNetwork @{profile='production';mode='domain'}
     Assert (-not $result.changed -and $script:effects -eq $count) 'Healthy preparation must be idempotent'
+    $script:rules['MuOnline-Web-80'].LocalAddress='0.0.0.0'
+    Assert (-not (Test-WebFirewall $script:rules['MuOnline-Web-80'] 80 'MuOnline-Web')) 'The native zero-address regression must not match the Windows LAN IP'
+    $result=Invoke-WebNetwork @{profile='production';mode='domain'}
+    Assert ($result.changed -and $script:rules['MuOnline-Web-80'].LocalAddress -eq 'Any') 'An existing broken address filter must be repaired'
+    $protectedScript = Join-Path (Join-Path $temporary 'MuOnline-Web-Network') 'web-network.ps1'
+    [IO.File]::WriteAllText($protectedScript, '# old refresh helper')
+    $result=Invoke-WebNetwork @{profile='production';mode='domain'}
+    Assert ($result.changed -and (Get-FileHash -LiteralPath $protectedScript).Hash -eq (Get-FileHash -LiteralPath $script:WebScriptPath).Hash) 'The old scheduled refresh script must be replaced by the corrected helper'
+    $script:listenerPid=4
+    $result=Invoke-WebNetwork @{profile='production';mode='domain'}
+    Assert (-not $result.changed) 'System-hosted portproxy also remains supported'
+    $script:listenerPid=999
+    $count=$script:effects
+    try { Invoke-WebNetwork @{profile='production';mode='domain'}; throw 'Expected listener owner refusal' } catch { Assert ($_.Exception.Message -like '*already used*') 'A matching map must not bless a foreign listener PID' }
+    Assert ($script:effects -eq $count) 'Foreign listener ownership must precede all changes'
+    $script:listenerPid=$script:proxyPid
     $script:target='172.25.16.20'
     $Refresh=$true
     $result=Invoke-WebNetwork @{profile='production';mode='domain'}
