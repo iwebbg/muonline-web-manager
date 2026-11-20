@@ -37,7 +37,9 @@ its verified-release/update/backup coordinator. Domain publishes WSL ports 80/44
 Before an access switch, exact state/Compose/.env/nginx bytes are backed up. A
 Domain image is built before stopping the previous nginx, so build failures leave
 the old proxy available for restoration. The previous nginx is stopped before
-standalone Certbot needs port 80. The first challenge container temporarily uses
+standalone Certbot needs port 80. PHP/config cache preparation finishes before the
+first Domain nginx container starts; no force-recreation interrupts its initial
+certificate request before the health wait. The first challenge container temporarily uses
 `restart: no` so a refusal cannot repeatedly contact the CA in a restart loop. Only
 after its first health/syntax success is normal `unless-stopped` behavior restored
 and rechecked using the existing certificate. Only after success is the legacy `muonline-certificates.timer` disabled;

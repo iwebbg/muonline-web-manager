@@ -178,6 +178,29 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn('APP_KEY="original-key"', (worker.APP / '.env').read_text())
         self.assertEqual(worker.load_state()['access']['url'], 'https://mu.example.test')
 
+    def test_domain_certificate_startup_is_not_recreated_before_its_first_health_wait(self):
+        self.domain_release()
+        issuing = False
+        certificate_exists = False
+        issuance_count = 0
+        def compose(*args, **kwargs):
+            nonlocal issuing, certificate_exists, issuance_count
+            starts_nginx = args[:2] == ('up', '-d') and ('nginx' in args or args == ('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300'))
+            if starts_nginx:
+                if issuing:
+                    raise AssertionError('Recreating nginx interrupted the active standalone certificate request')
+                if not certificate_exists:
+                    issuance_count += 1
+                    issuing = True
+                if '--wait' in args:
+                    certificate_exists = True
+                    issuing = False
+            return ''
+        with patch.object(worker, 'compose', side_effect=compose), patch.object(worker.os, 'chown', create=True):
+            worker.apply_access(self.state, {'mode': 'domain', 'host': 'mu.example.test', 'email': 'owner@example.test'})
+        self.assertEqual(issuance_count, 1)
+        self.assertTrue(certificate_exists)
+
     def test_domain_requires_release_files_before_changing_installed_configuration(self):
         original = worker.STATE.read_bytes()
         with patch.object(worker, 'compose') as compose:

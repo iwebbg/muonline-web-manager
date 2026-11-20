@@ -635,3 +635,25 @@ nginx Dockerfile build, external LAN/router/Cloudflare routing or native reboot.
 previous successful Win10/Win11/Server2022/Server2025 VM runs were on the earlier build;
 targeted acceptance on the new build is still required. The historical 522 log proves
 a failed proxied challenge, not which external/local hop caused it.
+
+
+### Uninterrupted standalone startup (2026-11-21)
+
+The user-provided `20261120T214730183-resumeInstall-4d801422.log` confirms successful
+Laravel production nginx image construction and standalone Certbot execution, followed
+by an HTTP-01 Cloudflare 522. Unlike the preceding install log, this attempt passes
+the elevation boundary. Exit 0 from the Windows helper is not proof of public routing.
+
+The log also shows nginx being started and then force-recreated roughly a second
+later, before certificate health was awaited. The manager now excludes Domain nginx
+from the preliminary PHP/queue/scheduler startup. Its first startup occurs in the
+health-waiting full-project operation; normal restart-policy activation follows only
+after certificate health. Local/IP retain their original startup argv. This avoids
+interrupting a live standalone challenge but does not establish that this race was
+the sole cause of the observed public 522.
+
+A new regression simulates an in-progress certificate request and rejects premature
+nginx recreation; it failed against the old implementation and passes after the fix.
+`npm test` passes 90 Node and 80 Python tests; 23 Windows-only tests skip on Linux.
+No UI/preload changes, real certificate issuance, native Windows networking checks,
+Laravel repository modifications or CDN publishing were performed for this fix.

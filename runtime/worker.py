@@ -949,7 +949,12 @@ def apply_access(state, settings, initial=False):
             compose('build', 'nginx')
         # Release nginx startup owns standalone port 80 until the certificate exists.
         compose('stop', 'nginx')
-        compose('up', '-d', '--force-recreate', 'app', 'queue', 'scheduler', 'nginx')
+        # Prepare PHP/config before the first Domain nginx startup. Its standalone
+        # Certbot must run uninterrupted until the following health wait completes.
+        initial_services = ['app', 'queue', 'scheduler']
+        if access['mode'] != 'domain':
+            initial_services.append('nginx')
+        compose('up', '-d', '--force-recreate', *initial_services)
         compose('exec', '-T', 'app', 'php', 'artisan', 'config:clear', '--no-interaction')
         compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
         compose('exec', '-T', 'nginx', 'nginx', '-t')
