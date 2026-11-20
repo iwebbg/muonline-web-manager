@@ -320,3 +320,12 @@ the full operational navigation and hide First installation. Uninstall's SQL tar
 private credentials and irreversible confirmations live in its collapsed Control
 Panel section. Failed status checks do not count as completed installation. The
 three donation links remain visible below both busy and terminal dialogs.
+
+A failed game bootstrap can follow a successfully created web database. Preserve the
+pending deployment and its generated passwords/key. Resume reuses a currently reachable
+bound local SQL endpoint without a redundant firewall mutation, but still verifies the
+actual Docker TCP path. A game-specific bootstrap error directs the operator to the
+existing game database, selected profile and temporary administrator permissions;
+this message does not prove which of those failed and does not authorize database
+replacement or password rotation. SQL diagnostics are read-only and remain accessible
+from the incomplete-install view.

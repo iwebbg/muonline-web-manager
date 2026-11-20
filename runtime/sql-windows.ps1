@@ -51,6 +51,45 @@ function Get-SqlPortRules([int]$port) {
     return @($filters | Get-NetFirewallRule -PolicyStore ActiveStore -ErrorAction Stop | Where-Object { [string]$_.Direction -eq 'Inbound' })
 }
 
+# NetSecurity accepts prefix lengths and dotted masks; compare address sets, not spelling.
+function ConvertTo-CanonicalFirewallAddress([string]$value) {
+    $parts = $value.Trim().Split('/')
+    if ($parts.Count -gt 2) { return $null }
+    $address = $null
+    if (-not [Net.IPAddress]::TryParse($parts[0],[ref]$address) -or $address.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork -or $address.ToString() -cne $parts[0]) { return $null }
+    $prefix = 32
+    if ($parts.Count -eq 2) {
+        if ($parts[1] -match '^\d{1,2}$') { $prefix = [int]$parts[1] }
+        else {
+            $maskAddress = $null
+            if (-not [Net.IPAddress]::TryParse($parts[1],[ref]$maskAddress) -or $maskAddress.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork -or $maskAddress.ToString() -cne $parts[1]) { return $null }
+            $prefix = 0; $zeroSeen = $false
+            foreach ($octet in $maskAddress.GetAddressBytes()) {
+                for ($bit=7; $bit -ge 0; $bit--) {
+                    if (($octet -band (1 -shl $bit)) -ne 0) {
+                        if ($zeroSeen) { return $null }
+                        $prefix += 1
+                    } else { $zeroSeen=$true }
+                }
+            }
+        }
+    }
+    if ($prefix -lt 0 -or $prefix -gt 32) { return $null }
+    $bytes = $address.GetAddressBytes(); $remaining = $prefix
+    for ($index=0; $index -lt 4; $index++) {
+        $bits = [Math]::Max(0,[Math]::Min(8,$remaining))
+        $mask = if ($bits -eq 0) { 0 } else { (255 -shl (8-$bits)) -band 255 }
+        $bytes[$index] = $bytes[$index] -band $mask
+        $remaining -= 8
+    }
+    return ($bytes -join '.') + '/' + $prefix
+}
+
+function Test-FirewallAddressMatch([string]$actual,[string]$expected) {
+    $canonical = ConvertTo-CanonicalFirewallAddress $actual
+    return $null -ne $canonical -and $canonical -ceq (ConvertTo-CanonicalFirewallAddress $expected)
+}
+
 function Get-EquivalentSqlRule($scope,[int]$port) {
     foreach ($rule in @(Get-SqlPortRules $port)) {
         if ([string]$rule.Enabled -ne 'True' -or [string]$rule.Action -ne 'Allow' -or [string]$rule.Profile -ne 'Any') { continue }
@@ -58,7 +97,7 @@ function Get-EquivalentSqlRule($scope,[int]$port) {
         $ports = $rule | Get-NetFirewallPortFilter
         $application = $rule | Get-NetFirewallApplicationFilter
         $service = $rule | Get-NetFirewallServiceFilter
-        if (($addresses.LocalAddress -join ',') -eq $scope.localAddress -and ($addresses.RemoteAddress -join ',') -eq $scope.remoteAddress -and ($ports.LocalPort -join ',') -eq [string]$port -and [string]$application.Program -eq 'Any' -and [string]$service.Service -eq 'Any') { return $rule }
+        if ((Test-FirewallAddressMatch ($addresses.LocalAddress -join ',') $scope.localAddress) -and (Test-FirewallAddressMatch ($addresses.RemoteAddress -join ',') $scope.remoteAddress) -and ($ports.LocalPort -join ',') -eq [string]$port -and [string]$application.Program -eq 'Any' -and [string]$service.Service -eq 'Any') { return $rule }
     }
     return $null
 }
@@ -196,7 +235,8 @@ function Invoke-Change($request) {
             $ports = $existing[0] | Get-NetFirewallPortFilter
             $application = $existing[0] | Get-NetFirewallApplicationFilter
             $serviceFilter = $existing[0] | Get-NetFirewallServiceFilter
-            if ([string]$existing[0].Profile -ne 'Any' -or [string]$application.Program -ne 'Any' -or [string]$serviceFilter.Service -ne 'Any' -or [string]$existing[0].Group -ne 'MuOnline Web Manager SQL' -or ($addresses.LocalAddress -join ',') -ne $request.scope.localAddress -or ($addresses.RemoteAddress -join ',') -ne $request.scope.remoteAddress -or ($ports.LocalPort -join ',') -ne [string]$port -or [string]$existing[0].Action -ne 'Allow' -or [string]$existing[0].Direction -ne 'Inbound' -or [string]$ports.Protocol -notin @('TCP','6')) { throw 'Existing rule mismatch' }
+            $script:changeEvidence = @{expectedScope=$request.scope; observed=@{name=[string]$existing[0].Name; profile=[string]$existing[0].Profile; program=[string]$application.Program; service=[string]$serviceFilter.Service; group=[string]$existing[0].Group; localAddress=($addresses.LocalAddress -join ','); remoteAddress=($addresses.RemoteAddress -join ','); port=($ports.LocalPort -join ','); protocol=[string]$ports.Protocol; action=[string]$existing[0].Action; direction=[string]$existing[0].Direction}}
+            if ([string]$existing[0].Profile -ne 'Any' -or [string]$application.Program -ne 'Any' -or [string]$serviceFilter.Service -ne 'Any' -or [string]$existing[0].Group -ne 'MuOnline Web Manager SQL' -or -not (Test-FirewallAddressMatch ($addresses.LocalAddress -join ',') $request.scope.localAddress) -or -not (Test-FirewallAddressMatch ($addresses.RemoteAddress -join ',') $request.scope.remoteAddress) -or ($ports.LocalPort -join ',') -ne [string]$port -or [string]$existing[0].Action -ne 'Allow' -or [string]$existing[0].Direction -ne 'Inbound' -or [string]$ports.Protocol -notin @('TCP','6')) { throw 'Existing rule mismatch' }
             $changed = [string]$existing[0].Enabled -ne 'True'
             if ($changed) { Enable-NetFirewallRule -Name $request.ruleName | Out-Null }
             return @{ok=$true; code='firewallExists'; changed=$changed}
@@ -242,12 +282,16 @@ function Invoke-Change($request) {
     } finally { $base.Dispose() }
 }
 
+$script:changeEvidence = $null
 try {
     $inputText = if ($InlineRequest) { $InlineRequest } elseif ($RequestPath) { [IO.File]::ReadAllText($RequestPath) } else { [Console]::In.ReadToEnd() }
     $request = $inputText | ConvertFrom-Json
     $result = if ($request.operation -eq 'inventory') { @{ok=$true; result=(Get-Inventory $request)} } elseif ($request.operation -eq 'change') { Invoke-Change $request } else { @{ok=$false; code='unsupportedOperation'} }
 } catch {
-    $result = @{ok=$false; code='windowsDiagnosticUnavailable'; changed=$false}
+    $code = if ($_.Exception.Message -eq 'Existing rule mismatch') { 'firewallRuleMismatch' } else { 'windowsDiagnosticUnavailable' }
+    $detail = if ($request.operation -eq 'change') { $_.Exception.Message.Substring(0,[Math]::Min(600,$_.Exception.Message.Length)) } else { $null }
+    # Change requests contain public Windows metadata only, never SQL credentials.
+    $result = @{ok=$false; code=$code; changed=$false; evidence=$script:changeEvidence; detail=$detail}
 }
 $json = ConvertTo-Json -InputObject $result -Depth 20 -Compress
 if ($ResultPath) { [IO.File]::WriteAllText($ResultPath,$json,(New-Object System.Text.UTF8Encoding($false))) } else { [Console]::Out.WriteLine($json) }

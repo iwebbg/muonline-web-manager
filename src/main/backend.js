@@ -326,7 +326,7 @@ exit 0
         if (pending && typeof request.settings.sqlHost === 'string') {
           const original = state.bootstrapSqlEndpoint;
           const expectedId = original && request.settings.sqlHost === original.host ? state.localSqlInstanceId : null;
-          const prepared = await this.setup.run('sqlNetwork', () => this.sql.prepareInstallation(request.settings.sqlHost, request.settings.sqlPort ?? 1433, expectedId));
+          const prepared = await this.setup.run('sqlNetwork', () => this.sql.prepareInstallation(request.settings.sqlHost, request.settings.sqlPort ?? 1433, expectedId, original?.port));
           if (prepared.local) {
             resolvedSqlEndpoint = { host: prepared.host, port: prepared.port };
             request.settings.sqlHost = prepared.host;
@@ -349,6 +349,7 @@ exit 0
         return pending && typeof request.settings.sqlHost === 'string' ? this.setup.run('application', provision) : provision();
       });
     } catch (error) {
+      if (error.sqlFirewall) await this.activeLog?.append('Windows SQL firewall refusal: ' + JSON.stringify(error.sqlFirewall).slice(0, 4000));
       if (resolvedSqlEndpoint) error.sqlResolvedEndpoint = resolvedSqlEndpoint;
       if (bootstrapAttempted) try {
         const current = await this.runtime({ action: 'status' });

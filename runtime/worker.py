@@ -184,6 +184,8 @@ def docker_failure(arguments, code, output='', timed_out=False):
         index = 6 if arguments[2:3] == ['--project-name'] else 2
         verb = arguments[index] if len(arguments) > index else ''
         operation = {'build': 'build', 'up': 'start', 'run': 'bootstrap' if '--env-from-file' in arguments else 'run', 'exec': 'exec', 'ps': 'status', 'logs': 'logs'}.get(verb, 'compose')
+    if not timed_out and operation == 'bootstrap' and 'game database access installation failed' in output.lower():
+        return 'Game database access setup failed. Check the existing game database, selected MuServer version and temporary SQL administrator permissions in SQL Troubleshooting. Use Resume after correcting the cause; existing SQL resources were retained.'
     reason = 'unknown'
     patterns = [
         ('diskSpace', r'no space left on device'),

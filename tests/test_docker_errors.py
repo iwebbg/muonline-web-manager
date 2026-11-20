@@ -74,3 +74,14 @@ class DockerErrorTests(unittest.TestCase):
                 worker.compose('up', '-d')
         self.assertIn('reason unknown', worker.docker_failure(['docker', 'compose', 'build'], 1, 'SECRET'))
         self.assertNotIn('SECRET', worker.docker_failure(['docker', 'compose', 'build'], 1, 'SECRET'))
+
+
+    def test_game_bootstrap_failure_keeps_the_actionable_stage_without_echoing_driver_secrets(self):
+        result = SimpleNamespace(returncode=1, stdout='Application database [PRIVATE-DB] is ready. Game database access installation failed. SECRET', stderr='')
+        with patch.object(worker.subprocess, 'run', return_value=result):
+            with self.assertRaisesRegex(RuntimeError, 'Game database access setup failed') as error:
+                worker.compose('run', '--env-from-file', '/dev/shm/private-bootstrap', 'app', 'true')
+        self.assertIn('SQL Troubleshooting', str(error.exception))
+        self.assertIn('existing SQL resources were retained', str(error.exception))
+        for secret in ['PRIVATE-DB', 'SECRET', '/dev/shm/private-bootstrap']:
+            self.assertNotIn(secret, str(error.exception))

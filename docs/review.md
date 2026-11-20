@@ -515,3 +515,28 @@ uninstall recovery and permanent donate footer. Screenshots of both terminal dia
 were inspected on Linux; fixtures use isolated IPC. Native PowerShell expectations
 now require reboot for successful modern-runtime upgrades and remain unverified locally.
 Follow [Windows acceptance](windows-vm.md) for the user's pending VM/physical/SSL sequence.
+
+## Win11 game bootstrap and firewall retry — 2026-11-20
+
+The supplied `20261120T072334151-resumeInstall-ea193ef7.log` shows an initial Docker
+TCP success and application database success, then Laravel's generic game database
+access failure. A later Resume still reaches the same measured gateway/SQL listener
+but the repeated elevated firewall operation refuses before bootstrap. Its original
+child refusal detail was not recorded, so the exact rule mismatch is unproven. The
+user's SSMS screenshot confirms `MuOnline` and `MuOnline_Web` exist in SQLEXPRESS;
+the remaining game schema/permissions/login cause needs installed diagnostics.
+
+Resume now reuses a freshly reachable bound local instance without another firewall
+mutation; post-checks and the Docker TCP preflight remain. Both JS and PowerShell
+firewall comparisons handle equivalent CIDR/dotted-mask/single-host notation while
+refusing broader/unknown/multiple scopes. Elevated failures now retain bounded
+credential-free comparison evidence/detail. Game bootstrap refusal has a specific
+EN/BG recovery message instead of an unknown Docker category. No sibling Laravel
+source, game adapter, database or runtime password was changed.
+
+`npm test`: 83 Node and 75 Python tests passed; 22 Windows-only tests skipped on Linux.
+`npm run test:ui` passed in EN/BG. The actual PowerShell firewall functions also passed
+`tests/windows-sql-contract.ps1` in an existing PowerShell 7.5 Linux container, with
+network disabled, readonly mounts/root filesystem and mocked Windows cmdlets. This
+checks equality/idempotence/refusal logic, not real Win11 NetSecurity/UAC integration.
+A VM retry and the separate game database diagnostic report remain outstanding.

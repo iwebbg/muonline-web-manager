@@ -54,6 +54,29 @@ export function ipv4Network(address, prefix) {
   return octets.join('.') + '/' + prefix;
 }
 
+/** Normalize one IPv4 firewall address; reject lists/ranges/keywords rather than widening scope. */
+export function canonicalFirewallAddress(value) {
+  if (typeof value !== 'string') return null;
+  const parts = value.trim().split('/');
+  if (parts.length > 2 || ipv4(parts[0]) === null) return null;
+  let prefix = 32;
+  if (parts.length === 2) {
+    if (/^\d{1,2}$/.test(parts[1])) prefix = Number(parts[1]);
+    else {
+      const mask = ipv4(parts[1]);
+      if (mask === null) return null;
+      prefix = 32 - Math.log2(2 ** 32 - mask);
+    }
+  }
+  if (!Number.isInteger(prefix) || prefix < 0 || prefix > 32) return null;
+  return prefix === 0 ? '0.0.0.0/0' : ipv4Network(parts[0], prefix);
+}
+
+export function firewallAddressMatches(observed, expected) {
+  const actual = canonicalFirewallAddress(observed);
+  return actual !== null && actual === canonicalFirewallAddress(expected);
+}
+
 /** Check subnet membership without inferring a netmask from a gateway address. */
 export function inSubnet(address, subnet) {
   if (typeof subnet !== 'string') {
@@ -199,7 +222,7 @@ export function buildSqlReport(windows, wsl, target) {
   steps.push(sqlStep('windows.firewall', windows.firewallError ? 'notChecked' : windowsPassed && wslFailed ? 'warning' : 'passed', 'network', windows.firewallError ? 'metadataUnknown' : windowsPassed && wslFailed ? 'firewallRouting' : 'firewallInspected', { rules: windows.firewallRules ?? [], profiles: windows.firewallProfiles ?? [] }));
   try {
     const scope = firewallScope(windows, wsl, target.port);
-    const stale = (windows.firewallRules ?? []).filter(rule => rule.managed !== false).filter(rule => rule.localAddress !== scope.localAddress || rule.remoteAddress !== scope.remoteAddress || Number(rule.port) !== scope.port);
+    const stale = (windows.firewallRules ?? []).filter(rule => rule.managed !== false).filter(rule => !firewallAddressMatches(rule.localAddress, scope.localAddress) || !firewallAddressMatches(rule.remoteAddress, scope.remoteAddress) || Number(rule.port) !== scope.port);
     steps.push(sqlStep('windows.firewallScope', stale.length ? 'warning' : 'passed', 'network', stale.length ? 'staleFirewall' : 'scopedFirewall', { scope, staleRules: stale }));
   } catch {
     steps.push(sqlStep('windows.firewallScope', 'notChecked', 'network', 'noFirewallScope'));

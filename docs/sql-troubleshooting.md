@@ -210,3 +210,26 @@ The detected gateway is the Windows SQL endpoint reachable from WSL/Docker, not
 Docker's bridge/container IP. Gateway addresses are never hardcoded. This behavior
 requires native Win10/Win11 acceptance, including firewall idempotence and reboot
 network changes; passing mocked tests is not Windows integration verification.
+
+### Bootstrap failure followed by a firewall retry failure
+
+A successful Docker `TCP OK` and successful application database creation precede a
+game bootstrap refusal: that first failure is in game database provisioning, not
+proof of a broken TCP path. The game database must already exist and match the
+selected MuServer schema; a restored database may also contain a prior login/user
+mapping. Use installed SQL diagnostics with temporary bootstrap authorization to
+separate missing schema, permissions and runtime-login failures. Do not drop/recreate
+databases or rotate saved runtime passwords as a generic recovery step.
+
+Resume of an already bound local SQL instance reuses the working connection when
+fresh listener, measured NAT scope and WSL TCP checks all pass. It does not require
+another firewall write/UAC in that case. The independent application-container TCP
+preflight remains mandatory before bootstrap. A missing binding, changed instance,
+changed scope/listener or failed reachability still requires verification/preparation.
+
+Firewall address comparisons accept equivalent single IPv4 address/prefix/dotted-mask
+representations. This is exact set equality, not a scope expansion: unknown keywords,
+multiple addresses, ranges, noncontiguous masks and broader/different networks do not
+match the expected private subnet. Elevated refusal reports now include a bounded
+machine-operation detail and public observed/expected rule metadata in support logs;
+SQL credentials are never part of the elevated request or its result.

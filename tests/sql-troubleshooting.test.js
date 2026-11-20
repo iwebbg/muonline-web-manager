@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { classifySqlError, ipv4Network, firewallScope, validateSqlInput, redactDiagnostic, buildSqlReport } from '../src/shared/sql-diagnostics.js';
+import { classifySqlError, ipv4Network, canonicalFirewallAddress, firewallAddressMatches, firewallScope, validateSqlInput, redactDiagnostic, buildSqlReport } from '../src/shared/sql-diagnostics.js';
 import { SqlTroubleshooter, windowsTcpProbe } from '../src/main/sql-troubleshooting.js';
 import { catalogs } from '../src/shared/i18n.js';
 
@@ -291,4 +291,31 @@ test('a saved local instance binding allows rediscovering its changed gateway bu
   sql.wsl = async () => ({ ...structuredClone(wsl), probes: [{ host: '172.30.176.1', port: 1433, ok: true }] });
   assert.equal((await sql.prepareInstallation('172.20.48.1', 1433, instance.id)).host, '172.30.176.1');
   await assert.rejects(sql.prepareInstallation('172.20.48.1', 1433, 'MSSQL15.Other'));
+});
+
+
+test('firewall equality compares exact IPv4 address sets across CIDR and dotted mask notation', () => {
+  assert.equal(canonicalFirewallAddress('172.30.176.0/255.255.240.0'), '172.30.176.0/20');
+  assert.equal(firewallAddressMatches('172.30.176.1/255.255.255.255', '172.30.176.1'), true);
+  assert.equal(firewallAddressMatches('172.30.177.4/20', '172.30.176.0/255.255.240.0'), true);
+  for (const value of ['Any', '0.0.0.0/0', '172.30.160.0/19', '172.30.176.0/255.0.255.0', '172.30.176.1,172.30.176.2', '172.30.176.0-172.30.191.255']) {
+    assert.equal(firewallAddressMatches(value, '172.30.176.0/20'), false);
+  }
+  const { sql } = coordinator();
+  sql.windows = async () => ({ ...windows, firewallRules: [{ managed: false, name: 'manual', enabled: true, localAddress: '172.30.176.1/32', remoteAddress: '172.30.176.0/255.255.240.0', port: '1433', direction: 'Inbound', action: 'Allow', profile: 'Any', program: 'Any', service: 'Any' }] });
+  return assert.rejects(sql.plan({ instance: 'SQLEXPRESS', change: 'firewall' }), /already exists/);
+});
+
+test('Resume reuses a reachable bound local instance without requiring another firewall mutation', async () => {
+  const { sql } = coordinator();
+  sql.windows = async () => ({ ...structuredClone(windows), firewallError: 'firewallUnavailable' });
+  sql.wsl = async () => ({ ...structuredClone(wsl), probes: [{ host: '172.30.176.1', port: 1433, ok: true }] });
+  sql.elevatedChange = async () => assert.fail('Do not reapply firewall for an already reachable bound SQL instance');
+  const endpoint = await sql.prepareInstallation('172.30.176.1', 1433, instance.id);
+  assert.equal(endpoint.host, '172.30.176.1');
+  assert.equal(endpoint.instanceId, instance.id);
+  let mutations = 0;
+  sql.elevatedChange = async () => { mutations++; return { ok: true }; };
+  await sql.prepareInstallation('172.30.176.1', 1433, instance.id, 1444);
+  assert.equal(mutations, 1, 'Changing a saved port still prepares its own scoped rule');
 });

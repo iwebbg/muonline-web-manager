@@ -61,6 +61,19 @@ $request = @{action='firewall'; confirmed=$true; instance='SQLEXPRESS'; port=143
 $first = Invoke-Change $request
 $second = Invoke-Change $request
 if (-not $first.ok -or -not $second.ok -or $script:added -ne 1 -or $second.changed) { throw 'Duplicate firewall contract failed' }
+# NetSecurity may return dotted masks or /32 for values created using CIDR/host notation.
+$script:rules[$request.ruleName].RemoteAddress='172.30.176.0/255.255.240.0'
+$script:rules[$request.ruleName].LocalAddress='172.30.176.1/255.255.255.255'
+$normalized=Invoke-Change $request
+if (-not $normalized.ok -or $normalized.changed -or $script:added -ne 1) { throw 'Equivalent dotted masks were not reused' }
+$script:rules[$request.ruleName].RemoteAddress='172.30.160.0/255.255.224.0'
+$rejected=$false
+try { Invoke-Change $request | Out-Null } catch { $rejected=$true }
+if (-not $rejected) { throw 'A broader dotted subnet was accepted' }
+$script:rules[$request.ruleName].RemoteAddress='172.30.176.0/20'
+foreach ($invalid in @('Any','172.30.176.0/255.0.255.0','172.30.176.1,192.168.1.1','172.30.176.0-172.30.191.255')) {
+    if (Test-FirewallAddressMatch $invalid $request.scope.remoteAddress) { throw 'Unsafe address equivalence accepted' }
+}
 $request.scope.remoteAddress='0.0.0.0/0'
 $rejected=$false
 try { Invoke-Change $request | Out-Null } catch { $rejected=$true }
@@ -71,7 +84,7 @@ $occupied=Invoke-Change $request
 if ($occupied.ok -or $occupied.code -ne 'portOccupied' -or $script:added -ne 1) { throw 'Foreign PID not protected' }
 $script:occupied=$false
 $script:rules.Clear()
-$script:rules['manual-rule'] = @{Name='manual-rule'; Group='manual'; Profile='Any'; Direction='Inbound'; Action='Allow'; Protocol='TCP'; LocalPort='1433'; LocalAddress='172.30.176.1'; RemoteAddress='172.30.176.0/20'; Enabled='True'}
+$script:rules['manual-rule'] = @{Name='manual-rule'; Group='manual'; Profile='Any'; Direction='Inbound'; Action='Allow'; Protocol='TCP'; LocalPort='1433'; LocalAddress='172.30.176.1'; RemoteAddress='172.30.176.0/255.255.240.0'; Enabled='True'}
 $manual=Invoke-Change $request
 if (-not $manual.ok -or $manual.changed -or $script:added -ne 1) { throw 'Equivalent manual rule was duplicated' }
 # Install authorizes only the narrow firewall action, with the same observed SQL PID.

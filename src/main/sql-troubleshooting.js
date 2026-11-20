@@ -4,7 +4,7 @@ import path from 'node:path';
 import net from 'node:net';
 import { execute } from './process.js';
 import { productionProfile, developmentProfile } from './runtime-profile.js';
-import { buildSqlReport, firewallScope, redactDiagnostic, validateSqlInput } from '../shared/sql-diagnostics.js';
+import { buildSqlReport, firewallScope, firewallAddressMatches, redactDiagnostic, validateSqlInput } from '../shared/sql-diagnostics.js';
 
 const PYTHON_BOOT = "import sys,json,io; p=json.load(sys.stdin); sys.stdin=io.StringIO(json.dumps({'request':p['request'],'probe':p['probe']})); exec(compile(p['script'],'sql-troubleshooting','exec'),{'__name__':'__main__'})";
 const WINDOWS_READ = "[Console]::InputEncoding=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false); $ErrorActionPreference='Stop'; $payload=[Console]::In.ReadToEnd()|ConvertFrom-Json; & ([scriptblock]::Create($payload.script)) -InlineRequest ($payload.request|ConvertTo-Json -Depth 8 -Compress)";
@@ -106,7 +106,7 @@ export class SqlTroubleshooter {
   }
 
   /** Installation owns this local-only preparation; remote SQL never receives a local rule. */
-  async prepareInstallation(host, port = 1433, expectedInstanceId = null) {
+  async prepareInstallation(host, port = 1433, expectedInstanceId = null, previousPort = port) {
     host = String(host ?? '').trim();
     port = Number(port);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid SQL port.');
@@ -132,9 +132,12 @@ export class SqlTroubleshooter {
     const ruleName = 'MuOnlineSql-' + createHash('sha256').update(JSON.stringify({ instance: instance.id, localAddress: scope.localAddress, remoteAddress: scope.remoteAddress, port })).digest('hex').slice(0, 16);
     // Firewall inventory may require elevation. The elevated script inspects and
     // deduplicates exact rules itself and revalidates the listener and measured adapter.
-    const response = await this.elevatedChange({ operation: 'change', action: 'firewall', confirmed: true,
-      installation: true, instance: instance.name, port, scope, ruleName, expected: instance });
-    if (response.ok !== true) throw new Error('Local SQL firewall preparation failed. Check UAC permissions and SQL Troubleshooting.');
+    const verifiedResume = expectedInstanceId === instance.id && host === scope.localAddress && port === Number(previousPort) && (network.probes ?? []).some(probe => probe.host === scope.localAddress && probe.port === port && probe.ok === true);
+    if (!verifiedResume) {
+      const response = await this.elevatedChange({ operation: 'change', action: 'firewall', confirmed: true,
+        installation: true, instance: instance.name, port, scope, ruleName, expected: instance });
+      if (response.ok !== true) throw Object.assign(new Error('Local SQL firewall preparation failed. Check UAC permissions and SQL Troubleshooting.'), { sqlFirewall: response });
+    }
     const after = await this.wsl({ host: scope.localAddress, port }, [], true);
     const refreshedWindows = await this.windows('', [], port);
     const currentScope = firewallScope(refreshedWindows, after, port);
@@ -225,14 +228,14 @@ export class SqlTroubleshooter {
       }
       const wsl = await this.wsl(target, [], true);
       scope = firewallScope(windows, wsl, target.port);
-      if ((windows.firewallRules ?? []).some(rule => rule.enabled && rule.localAddress === scope.localAddress && rule.remoteAddress === scope.remoteAddress && Number(rule.port) === scope.port && rule.action === 'Allow' && rule.direction === 'Inbound' && rule.profile === 'Any' && rule.program === 'Any' && rule.service === 'Any' && rule.managed !== true)) {
+      if ((windows.firewallRules ?? []).some(rule => rule.enabled && firewallAddressMatches(rule.localAddress, scope.localAddress) && firewallAddressMatches(rule.remoteAddress, scope.remoteAddress) && Number(rule.port) === scope.port && rule.action === 'Allow' && rule.direction === 'Inbound' && rule.profile === 'Any' && rule.program === 'Any' && rule.service === 'Any' && rule.managed !== true)) {
         throw new Error('An equivalent firewall rule already exists. Retest instead of adding a duplicate.');
       }
       ruleName = 'MuOnlineSql-' + createHash('sha256').update(JSON.stringify({ instance: instance.id, localAddress: scope.localAddress, remoteAddress: scope.remoteAddress, port: scope.port })).digest('hex').slice(0, 16);
       command = "New-NetFirewallRule -Name '" + ruleName + "' -DisplayName 'SQL Server " + target.port + " from WSL' -Group 'MuOnline Web Manager SQL' -Direction Inbound -Action Allow -Protocol TCP -LocalPort " + target.port + " -LocalAddress '" + scope.localAddress + "' -RemoteAddress '" + scope.remoteAddress + "' -Profile Any";
       const existing = (windows.firewallRules ?? []).find(rule => rule.name === ruleName);
       if (existing) {
-        if (existing.localAddress !== scope.localAddress || existing.remoteAddress !== scope.remoteAddress || Number(existing.port) !== scope.port || existing.action !== 'Allow' || existing.direction !== 'Inbound' || !['TCP', '6'].includes(existing.protocol)) {
+        if (!firewallAddressMatches(existing.localAddress, scope.localAddress) || !firewallAddressMatches(existing.remoteAddress, scope.remoteAddress) || Number(existing.port) !== scope.port || existing.action !== 'Allow' || existing.direction !== 'Inbound' || !['TCP', '6'].includes(existing.protocol)) {
           throw new Error('Existing firewall rule does not match the previewed scope.');
         }
         command = (existing.enabled ? 'Get-NetFirewallRule' : 'Enable-NetFirewallRule') + " -Name '" + ruleName + "'";
