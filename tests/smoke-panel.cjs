@@ -64,6 +64,10 @@ async function smoke() {
     }
     if (action === 'setupStatus' && rebootCheckpoint) return { ok: true, result: { schema: 1, stage: 'windows', status: 'restartRequired', completed: [], configuration: {} } };
     if (['install','resumeInstall'].includes(action) && onboardingMode) {
+      if (onboardingMode === 'bootstrap-failure') {
+        runtimeInstalled = true; runtimePhase = 'bootstrap-pending';
+        return { ok: false, error: 'Game database access setup failed. Check the existing game database, selected MuServer version and temporary SQL administrator permissions in SQL Troubleshooting. Use Resume after correcting the cause; existing SQL resources were retained.', bootstrapSqlEndpoint: savedBootstrapEndpoint };
+      }
       if (onboardingMode === 'restart') {
         rebootCheckpoint = true;
         return { ok: false, code: 'WSL_RESTART_REQUIRED', error: 'Restart Windows, then click Install again to continue. Installation progress has been saved.' };
@@ -199,6 +203,8 @@ async function smoke() {
       if (page === 'sql') {
         await window.webContents.executeJavaScript(`new Promise(resolve => { const timer=setInterval(()=>{ if(!document.querySelector('#language').disabled){clearInterval(timer);resolve();}},10); })`);
         assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#sqlInstance').value`), 'SQLEXPRESS');
+        assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="useInstalled"]').checked`), true);
+        assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#sqlManualFields').hidden && document.querySelector('#sqlManualFields').disabled`), true);
       }
       if (page === 'admins') {
         const validation = await window.webContents.executeJavaScript(`document.querySelector('[name="adminName"]').checkValidity(); document.querySelector('[name="adminName"]').validationMessage`);
@@ -210,6 +216,13 @@ async function smoke() {
       await fs.writeFile('artifacts/review/' + page + '-' + locale + '.png', screenshot.toPNG());
     }
   }
+  // Explicit manual mode remains available; it must not contaminate installed-mode requests.
+  await window.webContents.executeJavaScript(`document.querySelector('[data-page="sql"]').click(); (()=>{const mode=document.querySelector('[name="useInstalled"]'); mode.checked=false; mode.dispatchEvent(new Event('change')); document.querySelector('[name="gamePassword"]').value='Manual-only-private';})();`);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#sqlManualFields').hidden`), false);
+  await selectLanguage('en');
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#sqlManualFields').disabled`), false);
+  await window.webContents.executeJavaScript(`(()=>{const mode=document.querySelector('[name="useInstalled"]'); mode.checked=true; mode.dispatchEvent(new Event('change'));})();`);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="gamePassword"]').value`), '');
   await window.webContents.executeJavaScript(`document.querySelector('[data-page="sql"]').click(); document.querySelector('[name="adminPassword"]').value='Never-report-this-secret'; document.querySelector('#sqlForm').requestSubmit();`);
   await window.webContents.executeJavaScript(`new Promise(resolve => {const timer=setInterval(()=>{if(!document.querySelector('#language').disabled && document.querySelector('#sqlResults .sql-step')){clearInterval(timer);resolve();}},10);})`);
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="adminPassword"]').value`), '');
@@ -480,8 +493,27 @@ async function smoke() {
     await fs.writeFile(`artifacts/review/restart-required-${locale}.png`, (await window.webContents.capturePage()).toPNG());
     await window.webContents.executeJavaScript(`document.querySelector('#outcomeClose').click()`);
     assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').open`), false);
+    // A manual pre-install test must not survive discovery of new private runtime settings.
+    await window.webContents.executeJavaScript(`document.querySelector('[data-page="sql"]').click();`);
+    await idle();
+    await window.webContents.executeJavaScript(`document.querySelector('[name="useInstalled"]').checked=false; document.querySelector('[name="useInstalled"]').dispatchEvent(new Event('change')); document.querySelector('[data-page="install"]').click();`);
+    // A fresh bootstrap failure must immediately switch SQL diagnostics to saved settings,
+    // even before another explicit Status request and before an app container exists.
+    onboardingMode = 'bootstrap-failure';
+    await window.webContents.executeJavaScript(`document.querySelector('[name="sqlPassword"]').value='TemporaryPrivate123!'; document.querySelector('[name="adminName"]').value='Owner'; document.querySelector('[name="adminEmail"]').value='owner@example.test'; document.querySelector('[name="adminPassword"]').value='AdminPrivate123!'; document.querySelector('#resumeInstall').click();`);
+    await idle();
+    await window.webContents.executeJavaScript(`document.querySelector('[data-page="sql"]').click()`);
+    await idle();
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="useInstalled"]').checked`), true);
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#sqlManualFields').hidden && document.querySelector('#sqlManualFields').disabled`), true);
+    await window.webContents.executeJavaScript(`document.querySelector('#sqlForm').requestSubmit()`);
+    await idle();
+    const diagnosticInput = operations.filter(operation => operation.action === 'sqlDiagnose').at(-1).input;
+    assert.equal(diagnosticInput.useInstalled, true);
+    for (const name of ['appUsername','appPassword','gameUsername','gamePassword','host','gameDatabase']) assert.equal(Object.hasOwn(diagnosticInput,name), false);
+    await window.webContents.executeJavaScript(`document.querySelector('[data-page="install"]').click();`);
     onboardingMode = 'success';
-    await window.webContents.executeJavaScript(`document.querySelector('[name="sqlPassword"]').value='TemporaryPrivate123!'; document.querySelector('[name="adminPassword"]').value='AdminPrivate123!'; document.querySelector('#resumeInstall').click();`);
+    await window.webContents.executeJavaScript(`document.querySelector('[name="sqlPassword"]').value='TemporaryPrivate123!'; document.querySelector('[name="adminName"]').value='Owner'; document.querySelector('[name="adminEmail"]').value='owner@example.test'; document.querySelector('[name="adminPassword"]').value='AdminPrivate123!'; document.querySelector('#resumeInstall').click();`);
     await idle();
     assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').open`), true);
     assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').dataset.kind`), 'success');

@@ -540,3 +540,26 @@ source, game adapter, database or runtime password was changed.
 network disabled, readonly mounts/root filesystem and mocked Windows cmdlets. This
 checks equality/idempotence/refusal logic, not real Win11 NetSecurity/UAC integration.
 A VM retry and the separate game database diagnostic report remain outstanding.
+
+### Saved SQL diagnostics after interrupted bootstrap
+
+Fixed stale renderer installation state after a bootstrap failure. Existing and
+partial deployments now select their private saved SQL settings automatically;
+generated application/game credentials and TLS settings are resolved inside WSL,
+never copied into renderer fields. A manual pre-install test is superseded when a
+new private deployment becomes available. Explicit manual testing remains available;
+returning to automatic mode clears manual passwords. Optional temporary SQL admin
+credentials remain ephemeral and separately entered.
+
+Unknown live Mixed Mode metadata now produces Not checked without speculative
+restart advice. Matching Docker PDO evidence can confirm a local SQL instance only
+through a measured Windows address and a listener owned by its service PID. Remote
+endpoints and different listener ports cannot supply that confirmation.
+
+Validation: `npm test` passes 85 Node and 76 Python tests, with 22 Windows-only tests
+skipped on Linux. The added Python fixture checks saved Compose credentials with
+no app container, ignores stale manual overrides and verifies private stdin transport.
+`npm run test:ui` exercises EN/BG saved/manual settings, password clearing, and a
+fresh interrupted-bootstrap-to-diagnostics journey without entering runtime logins.
+These isolated tests do not establish native Win11 SQL bootstrap success; the
+underlying game provisioning failure still needs evidence from the user's VM.

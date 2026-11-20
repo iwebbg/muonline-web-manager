@@ -1,5 +1,6 @@
 /** Application-owned interface strings. Runtime identifiers and logs remain unchanged. */
 export default {
+  "sql.savedHint": "Connection addresses, databases, runtime logins, passwords and TLS options are read automatically inside the installed environment, including an incomplete installation. You do not need to copy anything from .env. Uncheck this option only for an advanced manual/external connection test.",
   "progress.estimate": "Approximate first-install time: about 15 minutes.\nDepends on your computer and internet connection.",
   "outcome.success.title": "Installation complete",
   "outcome.success.description": "Your website is ready. You can open it or manage its services from the Control Panel.",
@@ -335,7 +336,7 @@ export default {
   "sql.encrypt": "Encrypt the manual SQL connection",
   "sql.trust": "Local test only: trust an unverified/self-signed SQL certificate",
   "sql.bootstrap": "Optional temporary bootstrap authorization",
-  "sql.bootstrapHint": "sa is only a temporary bootstrap administrator. Never use it as an application/game runtime login. Game administrator fields are optional and fall back to application administrator fields independently, matching Laravel. No passwords are saved in the report.",
+  "sql.bootstrapHint": "Saved runtime credentials are loaded automatically. Temporary SQL administrator credentials are never saved and must be entered here only for additional privileged checks. sa is only a temporary bootstrap administrator. Never use it as an application/game runtime login. Game administrator fields are optional and fall back to application administrator fields independently, matching Laravel. No passwords are saved in the report.",
   "sql.adminUsername": "Temporary application administrator login",
   "sql.adminPassword": "Temporary application administrator password",
   "sql.gameAdminUsername": "Temporary game administrator login (optional override)",
@@ -385,8 +386,8 @@ export default {
   "sql.action.serviceStopped": "Inspect/start the correct service in SQL Server Configuration Manager, then retest.",
   "sql.reason.windowsOnly": "SQL Server is configured for Windows authentication only.",
   "sql.action.windowsOnly": "SSMS → server Properties → Security → SQL Server and Windows Authentication mode. Restart the selected SQL Server service explicitly.",
-  "sql.reason.mixedConfigured": "Mixed Mode is configured; its effective running state was not verified.",
-  "sql.action.mixedConfigured": "If recently changed, restart the correct SQL service. Retest with an authorized login.",
+  "sql.reason.mixedConfigured": "Mixed Mode is configured. The active mode could not be read; this alone does not indicate a pending restart.",
+  "sql.action.mixedConfigured": "Test with the saved application connection or optional temporary SQL authorization. Restart only when a configured/live mode mismatch is confirmed.",
   "sql.reason.mixedEffective": "The running server reports Mixed Mode.",
   "sql.action.mixedEffective": "Continue with login enabled/CONNECT SQL and database access checks.",
   "sql.reason.metadataUnknown": "This metadata could not be verified with the available permissions.",

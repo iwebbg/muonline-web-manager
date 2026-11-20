@@ -47,3 +47,5 @@ nav button[hidden],#installationEstimate[hidden]{display:none}
 .outcome-icon{display:grid;place-items:center;margin:auto;width:70px;height:70px;border-radius:50%;font-size:42px;font-weight:600;background:#4eac8620;color:#78d5a8;border:1px solid #4eac86}
 .installation-outcome[data-kind="restart"] .outcome-icon{background:#be945520;color:#e5bd7c;border-color:#be9455}
 #installationEstimate{margin:22px 0 8px;white-space:pre-line}#progressElapsed{margin-top:8px;font-variant-numeric:tabular-nums}
+
+#sqlManualFields[hidden],#sqlInstalledHint[hidden],#sqlManualHint[hidden]{display:none}

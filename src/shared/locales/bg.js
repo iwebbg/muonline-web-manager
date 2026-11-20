@@ -1,5 +1,6 @@
 /** Application-owned interface strings. Runtime identifiers and logs remain unchanged. */
 export default {
+  "sql.savedHint": "Адресите, базите, runtime потребителите, паролите и TLS опциите се прочитат автоматично в инсталираната среда, включително при недовършена инсталация. Не е нужно да копираш нищо от .env. Изключи тази опция само за разширен ръчен тест към друга връзка.",
   "progress.estimate": "Приблизително време за първа инсталация: около 15 минути.\nЗависи от компютъра и интернет връзката.",
   "outcome.success.title": "Инсталацията завърши успешно",
   "outcome.success.description": "Сайтът е готов. Можеш да го отвориш или да управляваш услугите му от Контролния панел.",
@@ -335,7 +336,7 @@ export default {
   "sql.encrypt": "Криптирай ръчната SQL връзка",
   "sql.trust": "Само за локален тест: довери се на непроверен/self-signed SQL сертификат",
   "sql.bootstrap": "Временни администраторски данни за първоначална настройка (опционално)",
-  "sql.bootstrapHint": "sa е само временен bootstrap администратор. Не го използвайте като runtime login на приложението или game базата. Game administrator полетата са опционални и използват application administrator полетата като fallback поотделно, както в Laravel. Пароли не се записват в отчета.",
+  "sql.bootstrapHint": "Запазените runtime данни се зареждат автоматично. Временните SQL администраторски данни не се запазват и се въвеждат тук само за допълнителни проверки с повече права. sa е само временен bootstrap администратор. Не го използвайте като runtime login на приложението или game базата. Game administrator полетата са опционални и използват application administrator полетата като fallback поотделно, както в Laravel. Пароли не се записват в отчета.",
   "sql.adminUsername": "Временен SQL администратор за приложението",
   "sql.adminPassword": "Парола на временния SQL администратор за приложението",
   "sql.gameAdminUsername": "Временен SQL администратор за игровите бази (опционално)",
@@ -385,8 +386,8 @@ export default {
   "sql.action.serviceStopped": "Проверете/стартирайте правилната услуга в SQL Server Configuration Manager и повторете теста.",
   "sql.reason.windowsOnly": "SQL Server е настроен само за Windows authentication.",
   "sql.action.windowsOnly": "SSMS → Properties на сървъра → Security → SQL Server and Windows Authentication mode. Рестартирайте изрично избраната SQL Server услуга.",
-  "sql.reason.mixedConfigured": "Mixed Mode е конфигуриран; активният режим не е потвърден.",
-  "sql.action.mixedConfigured": "Ако е променен наскоро, рестартирайте правилната SQL услуга. Проверете с оторизиран login.",
+  "sql.reason.mixedConfigured": "Mixed Mode е конфигуриран. Активният режим не може да бъде прочетен; това само по себе си не означава необходим рестарт.",
+  "sql.action.mixedConfigured": "Провери със запазената връзка на приложението или с временен SQL администратор. Рестартирай само при потвърдено несъответствие между конфигурирания и активния режим.",
   "sql.reason.mixedEffective": "Работещият сървър потвърждава Mixed Mode.",
   "sql.action.mixedEffective": "Продължете с enabled/CONNECT SQL и правата по базите.",
   "sql.reason.metadataUnknown": "Тези метаданни не могат да бъдат потвърдени с наличните права.",

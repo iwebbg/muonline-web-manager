@@ -21,7 +21,7 @@ let localSqlSuggestion = null;
 let statusCheckedAt = null;
 let statusEpoch = 0;
 let refreshingServices = false;
-const sqlState = { inventory: null, report: null, plan: null, fields: {}, installed: false };
+const sqlState = { inventory: null, report: null, plan: null, fields: {}, installed: null };
 let language = resolveLocale(navigator.language);
 let lastOutput = { kind: 'welcome' };
 let lastAction = '';
@@ -159,6 +159,7 @@ function changeLanguage(value) {
       }
     }
   }
+  if (page === 'sql') populateSql(t, sqlState, perform);
   renderOutput();
 }
 
@@ -229,6 +230,7 @@ function populate(fillSettings = false) {
     populateAdministrators(t, language, perform);
   }
   if (page === 'sql') {
+    sqlState.installed = status?.installed ?? null;
     populateSql(t, sqlState, perform, fillSettings);
   }
   const notice = document.querySelector('#updateNotice');
@@ -456,6 +458,10 @@ async function perform(action, input = {}, quiet = false) {
     if (action === 'uninstallRuntime') {
       status = { installed: false };
       sqlState.installed = false;
+      sqlState.lastInstalled = false;
+      sqlState.useInstalled = undefined;
+      sqlState.report = null;
+      sqlState.plan = null;
       settings.setup = { schema: 1, completed: [], configuration: {} };
       feeds = {};
       page = 'install';
@@ -475,7 +481,10 @@ async function perform(action, input = {}, quiet = false) {
     operationFailed = !restartPending;
     if (['install', 'resumeInstall'].includes(action)) {
       receiveSqlEndpoint(error.sqlResolvedEndpoint);
-      if (error.bootstrapSqlEndpoint) status = { ...status, installed: true, phase: 'bootstrap-pending', bootstrapSqlEndpoint: error.bootstrapSqlEndpoint };
+      if (error.bootstrapSqlEndpoint) {
+        status = { ...status, installed: true, phase: 'bootstrap-pending', bootstrapSqlEndpoint: error.bootstrapSqlEndpoint };
+        sqlState.installed = true;
+      }
       localSqlSuggestion = error.sqlSuggestion ?? null;
     }
     if (['adminList', 'adminUpdate', 'adminDelete'].includes(action)) {

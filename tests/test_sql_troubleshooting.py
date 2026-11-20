@@ -108,6 +108,35 @@ class SqlTroubleshootingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sql.build_connections(environment, {})
 
+    def test_partial_install_uses_private_compose_credentials_without_an_app_container_or_manual_secrets(self):
+        import json
+        environment = self.environment()
+        configuration = {'services': {'app': {'environment': environment}}}
+        commands = []
+        def command(arguments, data=None, timeout=20):
+            commands.append((arguments, data))
+            connections = json.loads(data)['connections']
+            app = next(item for item in connections if item['id'] == 'application')
+            game = next(item for item in connections if item['id'] == 'game')
+            self.assertEqual(app['password'], 'app-secret')
+            self.assertEqual(game['password'], 'game-secret')
+            self.assertEqual(game['username'], 'game_user')
+            self.assertEqual(game['host'], 'game-sql')
+            self.assertNotIn('manual-decoy', data)
+            return '{"steps":[]}'
+        php = (Path(__file__).resolve().parents[1] / 'runtime/sql-probe.php').read_text()
+        request = {'useInstalled': True, 'gameUsername': 'manual-decoy', 'gamePassword': 'manual-decoy', 'appPassword': 'manual-decoy', 'host': 'manual-decoy'}
+        with patch.object(sql, 'docker_context', return_value=(configuration, None, 'runtime:local', ['app-network'])), patch.object(sql, 'network_facts', return_value={'mode': 'nat', 'routes': [], 'addresses': [], 'probes': []}) as network, patch.object(sql, 'tcp_probe', return_value={'host': 'game-sql', 'port': 55477, 'ok': True}), patch.object(sql, 'command', side_effect=command):
+            report = sql.run_diagnostics(request, php)
+        network.assert_called_once_with('', 1433, [])
+        self.assertFalse(any(item['id'] == 'docker.probe' for item in report['steps']), 'Private connection fixture must finish without a swallowed probe failure')
+        self.assertEqual(len(commands), 1)
+        self.assertIn('--read-only', commands[0][0])
+        self.assertNotIn('game-secret', ' '.join(commands[0][0]))
+        self.assertNotIn('game-secret', str(report))
+        self.assertNotIn('app-secret', str(report))
+        self.assertTrue(any(item['id'] == 'docker.context' and item['evidence']['source'] == 'compose' for item in report['steps']))
+
 
 if __name__ == '__main__':
     unittest.main()

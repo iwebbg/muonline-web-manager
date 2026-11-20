@@ -12,13 +12,17 @@ container using an existing runtime image; it never builds or pulls one automati
    selected service and version appear in the inventory/results. A remote SQL endpoint
    can be tested too; its Windows registry/service settings cannot be inferred from
    this machine's local instances.
-2. For an existing deployment, select **Use installed application settings**. Host,
+2. For an existing or interrupted deployment, **Use installed application settings**
+   is selected automatically. Manual runtime fields are hidden and disabled. Host,
    port, TLS and runtime credentials come privately from the actual app container's
    environment, with resolved Compose settings as fallback. Manual fields do not
-   override that deployment. Before installation, enter the proposed host, port,
+   override that deployment; passwords never enter the renderer. A newly available
+   partial installation switches back to saved settings even after a manual test.
+   Before installation, enter the proposed host, port,
    database names and runtime SQL identities instead. Optional ranking/BattleCore
    databases can be checked independently.
-3. Optional bootstrap authorization is temporary. Game administrator username and
+3. Optional bootstrap authorization is temporary and must be entered explicitly;
+   it is distinct from automatically loaded runtime credentials. Game administrator username and
    password independently fall back to the application administrator values, matching
    Laravel's `GAME_DB_ADMIN_*` behavior. No authorization is saved to preferences.
 4. Run diagnostics. Results show **Passed / Warning / Failed / Not checked**, a cause,
@@ -37,7 +41,7 @@ preview and isolated tests, but does not pretend to inspect Windows services.
 | Layer | Evidence / limits |
 | --- | --- |
 | Instance | Registry64/Registry32 instance mapping, exact SQL service/PID/state and configured version; optional read-only local shared-memory Windows authentication obtains live version/authentication facts |
-| Authentication | Configured Mixed Mode is distinct from the live `IsIntegratedSecurityOnly` value; pending restart, disabled login and explicit `CONNECT SQL` denial are distinct. Limited metadata visibility remains Not checked. Error 18456 alone does not prove a bad password; inspect the SQL Server error log |
+| Authentication | Configured Mixed Mode is distinct from the live `IsIntegratedSecurityOnly` value; pending restart, disabled login and explicit `CONNECT SQL` denial are distinct. Limited metadata visibility remains Not checked, without a restart recommendation. A live PDO mode fact verifies the selected instance only when the connection matches a measured Windows address and listener owned by that instance PID. Error 18456 alone does not prove a bad password; inspect the SQL Server error log |
 | TCP | Enabled / Listen All / IPAll or individual enabled IP sections; dynamic `0` is not an empty value. Listener address/port/PID is matched against the selected service, including conflicts with another instance/process |
 | Windows | Node sockets test loopback, LAN, observed WSL gateway and requested target; no shell command is constructed from a host |
 | WSL | `wslinfo --networking-mode`, measured IPv4 addresses/prefixes and default routes, plus socket tests. Unknown mode remains Not checked. NAT gateway, LAN and mirrored localhost are tested separately |

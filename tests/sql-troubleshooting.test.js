@@ -319,3 +319,23 @@ test('Resume reuses a reachable bound local instance without requiring another f
   await sql.prepareInstallation('172.30.176.1', 1433, instance.id, 1444);
   assert.equal(mutations, 1, 'Changing a saved port still prepares its own scoped rule');
 });
+
+test('unreadable effective SQL mode does not imply a warning or required restart', () => {
+  const report = buildSqlReport(windows, wsl, { instance: instance.name, host: '172.30.176.1', port: 1433 });
+  const authentication = report.steps.find(step => step.id === 'windows.authentication');
+  assert.equal(authentication.status, 'notChecked');
+  assert.equal(authentication.reason, 'mixedConfigured');
+  assert.notEqual(authentication.action, 'restartRequired');
+});
+
+test('live PDO authentication facts confirm only the corresponding measured local SQL instance', () => {
+  const connection = { id: 'application', host: '172.30.176.1', port: 1433 };
+  const sqlFacts = [{ id: 'docker.targets', evidence: { connections: [connection] } },
+    { id: 'docker.real-network.application.effectiveMode', status: 'passed', evidence: { windowsOnly: 0 } }];
+  const inspect = facts => buildSqlReport(windows, { ...wsl, steps: facts }, { instance: instance.name, port: 1433 }).steps.find(step => step.id === 'windows.authentication');
+  assert.equal(inspect(sqlFacts).reason, 'mixedEffective');
+  assert.equal(inspect(sqlFacts).status, 'passed');
+  for (const changed of [{ ...connection, host: 'external-sql.example' }, { ...connection, port: 55555 }]) {
+    assert.equal(inspect([{ ...sqlFacts[0], evidence: { connections: [changed] } }, sqlFacts[1]]).reason, 'mixedConfigured');
+  }
+});

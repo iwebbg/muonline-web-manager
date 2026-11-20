@@ -222,7 +222,9 @@ def run_diagnostics(request, php_source):
     DEADLINE = time.monotonic() + (25 if request.get('networkOnly') else 150)
     if request.get('networkOnly'):
         return network_facts(request.get('host', ''), int(request.get('port', 1433)), request.get('windowsAddresses', []))
-    result = network_facts(request.get('host', ''), int(request.get('port', 1433)), request.get('windowsAddresses', []))
+    # Installed settings own the endpoint; ignore stale manual form values.
+    host = '' if request.get('useInstalled', True) else request.get('host', '')
+    result = network_facts(host, int(request.get('port', 1433)), request.get('windowsAddresses', []))
     result['steps'] = []
     try:
         configuration, inspected, image, networks = docker_context()

@@ -4,13 +4,24 @@ export function sqlPage(t) {
   return `<h1>${t('sql.title')}</h1><p class="lead">${t('sql.lead')}</p>
     <div class="actions"><button data-action="sqlInspect">${t('sql.inspect')}</button><button data-action="sqlCopyReport">${t('sql.copyReport')}</button></div>
     <form id="sqlForm"><div class="grid"><label>${t('sql.instance')}<select name="instance" id="sqlInstance"></select></label><label>${t('sql.port')}<input name="port" type="number" min="1" max="65535" value="1433" required></label></div>
-    <label class="check"><input name="useInstalled" type="checkbox">${t('sql.useInstalled')}</label><p class="hint">${t('sql.manualHint')}</p>
-    <div class="grid">${field('host', 'host')}${field('applicationDatabase', 'applicationDatabase', 'text', 'MuOnline_Web')}${field('gameDatabase', 'gameDatabase', 'text', 'MuOnline')}${field('rankingDatabase', 'rankingDatabase')}${field('battleCoreDatabase', 'battleCoreDatabase')}${field('appUsername', 'appUsername')}${field('appPassword', 'appPassword', 'password')}${field('gameUsername', 'gameUsername')}${field('gamePassword', 'gamePassword', 'password')}</div>
-    <label class="check"><input name="encrypt" type="checkbox" checked>${t('sql.encrypt')}</label><label class="check"><input name="trustCertificate" type="checkbox">${t('sql.trust')}</label>
+    <label class="check"><input name="useInstalled" type="checkbox" checked>${t('sql.useInstalled')}</label><p class="hint" id="sqlInstalledHint">${t('sql.savedHint')}</p><p class="hint" id="sqlManualHint" hidden>${t('sql.manualHint')}</p>
+    <fieldset id="sqlManualFields" hidden disabled><div class="grid">${field('host', 'host')}${field('applicationDatabase', 'applicationDatabase', 'text', 'MuOnline_Web')}${field('gameDatabase', 'gameDatabase', 'text', 'MuOnline')}${field('rankingDatabase', 'rankingDatabase')}${field('battleCoreDatabase', 'battleCoreDatabase')}${field('appUsername', 'appUsername')}${field('appPassword', 'appPassword', 'password')}${field('gameUsername', 'gameUsername')}${field('gamePassword', 'gamePassword', 'password')}</div>
+    <label class="check"><input name="encrypt" type="checkbox" checked>${t('sql.encrypt')}</label><label class="check"><input name="trustCertificate" type="checkbox">${t('sql.trust')}</label></fieldset>
     <details><summary>${t('sql.bootstrap')}</summary><p class="hint">${t('sql.bootstrapHint')}</p><div class="grid">${field('adminUsername', 'adminUsername')}${field('adminPassword', 'adminPassword', 'password')}${field('gameAdminUsername', 'gameAdminUsername')}${field('gameAdminPassword', 'gameAdminPassword', 'password')}</div></details>
     <button type="submit" class="primary">${t('sql.run')}</button></form>
     <section id="sqlResults" class="sql-results" aria-live="polite"></section>
     <section class="panel sql-changes"><h2>${t('sql.changes')}</h2><p class="hint">${t('sql.changesHint')}</p><label>${t('sql.section')}<select name="section" id="sqlSection"></select></label><div class="actions">${['mixedMode', 'tcpPort', 'firewall', 'restart'].map(action => `<button type="button" data-sql-change="${action}">${t('sql.change.' + action)}</button>`).join('')}</div><div id="sqlPlan"></div></section>`;
+}
+
+/** Installed runtime credentials are read only inside WSL, never copied into renderer fields. */
+function updateConnectionMode() {
+  const installed = document.querySelector('[name="useInstalled"]').checked;
+  const fields = document.querySelector('#sqlManualFields');
+  fields.hidden = installed;
+  fields.disabled = installed;
+  document.querySelector('#sqlInstalledHint').hidden = !installed;
+  document.querySelector('#sqlManualHint').hidden = installed;
+  if (installed) fields.querySelectorAll('input[type="password"]').forEach(field => { field.value = ''; });
 }
 
 /** Read ephemeral diagnostic form input, preserving boolean controls explicitly. */
@@ -38,7 +49,7 @@ export function populateSql(t, state, invoke, fill = false) {
     instance.value = selected;
     state.lastInventory = state.inventory;
     if (fill) {
-      document.querySelector('[name="useInstalled"]').checked = state.installed === true;
+      document.querySelector('[name="useInstalled"]').checked = state.useInstalled ?? (state.installed !== false);
       for (const [name, value] of Object.entries(state.fields ?? {})) {
         const field = document.querySelector('#sqlForm [name="' + name + '"]');
         if (field && field.type !== 'password') {
@@ -47,6 +58,13 @@ export function populateSql(t, state, invoke, fill = false) {
       }
     }
   }
+  if (state.lastInstalled !== state.installed) {
+    // A newly available deployment supersedes a pre-install manual test connection.
+    if (state.installed === true) state.useInstalled = true;
+    if (state.useInstalled === undefined || state.installed === true) document.querySelector('[name="useInstalled"]').checked = state.installed !== false;
+    state.lastInstalled = state.installed;
+  }
+  updateConnectionMode();
   const sectionSelect = document.querySelector('#sqlSection');
   const sectionValue = state.selectedSection ?? sectionSelect.value;
   sectionSelect.replaceChildren();
@@ -152,6 +170,13 @@ export function populateSql(t, state, invoke, fill = false) {
 
 /** Bind read-only diagnostics separately from preview/apply change controls. */
 export function bindSql(t, state, invoke) {
+  document.querySelector('[name="useInstalled"]').addEventListener('change', event => {
+    state.useInstalled = event.target.checked;
+    state.report = null;
+    state.plan = null;
+    updateConnectionMode();
+    populateSql(t, state, invoke);
+  });
   document.querySelector('#sqlInstance').addEventListener('change', event => {
     state.fields.instance = event.target.value;
     state.selectedSection = null;

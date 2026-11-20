@@ -329,3 +329,17 @@ existing game database, selected profile and temporary administrator permissions
 this message does not prove which of those failed and does not authorize database
 replacement or password rotation. SQL diagnostics are read-only and remain accessible
 from the incomplete-install view.
+
+SQL Troubleshooting defaults to the private saved application/game connections even
+for `bootstrap-pending` deployments. A bootstrap error carrying the saved endpoint
+updates the panel immediately; no extra Status click or manual copy from `.env` is
+needed. The WSL diagnostic process reads the container environment, or resolved
+Compose settings when the app container has not been created. Passwords never fill
+renderer fields. Manual connection inputs are hidden/disabled unless explicitly
+selected for a separate advanced test. Optional temporary SQL administrator input
+still requires re-entry, since bootstrap authorization is intentionally not retained.
+
+Configured Mixed Mode without a readable live value is Not checked, not evidence
+that another restart is required. Only a confirmed configured/live mismatch advises
+a restart. Docker PDO facts may confirm the selected Windows instance only after
+matching its measured address, listener port and owning service PID.

@@ -186,9 +186,24 @@ export function buildSqlReport(windows, wsl, target) {
   if (selected) {
     steps.push(sqlStep('windows.service', selected.state === 'Running' ? 'passed' : 'failed', 'windows', selected.state === 'Running' ? 'serviceRunning' : 'serviceStopped', { service: selected.service, state: selected.state, version: selected.version }));
     const mode = selected.loginMode;
-    const effective = windows.localSqlMetadata?.windowsOnly;
+    let effective = windows.localSqlMetadata?.windowsOnly;
+    if (effective !== 0 && effective !== 1) {
+      // A PDO live-mode fact belongs to this Windows instance only when the actual
+      // connection endpoint is one of its measured addresses and owned listener ports.
+      const connections = (wsl.steps ?? []).find(item => item.id === 'docker.targets')?.evidence?.connections ?? [];
+      const measuredModes = new Set();
+      for (const item of wsl.steps ?? []) {
+        if (!item.id?.endsWith('.effectiveMode') || ![0, 1].includes(item.evidence?.windowsOnly)) continue;
+        const connectionId = item.id.split('.').at(-2);
+        const connection = connections.find(value => value.id === connectionId);
+        if (connection && (windows.addresses ?? []).some(address => address.address === connection.host)
+            && (windows.listeners ?? []).some(listener => listener.pid === selected.pid && listener.port === Number(connection.port)
+              && ['0.0.0.0', '::', connection.host].includes(listener.address))) measuredModes.add(item.evidence.windowsOnly);
+      }
+      if (measuredModes.size === 1) effective = [...measuredModes][0];
+    }
     const pending = (mode === 2 && effective === 1) || (mode === 1 && effective === 0);
-    steps.push(sqlStep('windows.authentication', pending ? 'warning' : effective === 0 ? 'passed' : mode === 1 || effective === 1 ? 'failed' : mode === 2 ? 'warning' : 'notChecked', 'authentication', pending ? 'restartRequired' : effective === 0 ? 'mixedEffective' : mode === 1 || effective === 1 ? 'windowsOnly' : mode === 2 ? 'mixedConfigured' : 'metadataUnknown', { configuredMode: mode, effectiveWindowsOnly: effective, instance: selected.name }));
+    steps.push(sqlStep('windows.authentication', pending ? 'warning' : effective === 0 ? 'passed' : mode === 1 || effective === 1 ? 'failed' : 'notChecked', 'authentication', pending ? 'restartRequired' : effective === 0 ? 'mixedEffective' : mode === 1 || effective === 1 ? 'windowsOnly' : mode === 2 ? 'mixedConfigured' : 'metadataUnknown', { configuredMode: mode, effectiveWindowsOnly: effective, instance: selected.name }));
     for (const login of windows.localSqlMetadata?.logins ?? []) {
       const denied = login.explicitConnect === 'DENY';
       const missing = !login.found && login.metadataVisible;
