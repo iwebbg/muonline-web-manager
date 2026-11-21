@@ -62,6 +62,8 @@ See [review evidence and remaining checks](docs/review.md) for further details.
 
 ## Development
 
+See [Contributing](CONTRIBUTING.md) for the branch and review policy.
+
 ```sh
 npm ci
 # If npm withheld dependency scripts: node node_modules/electron/install.js
