@@ -20,12 +20,17 @@ jobs:
           python-version: '3.12'
       - run: npm ci
       - run: node node_modules/electron/install.js
-      - run: npm run test:node
+      # Node launches powershell.exe fixtures. Starting Node from pwsh would
+      # inherit PS7 module paths and can hide PS5.1 cmdlets such as Get-FileHash.
+      - name: Node contracts with Windows PowerShell 5.1
+        shell: powershell
+        run: npm run test:node
       - run: npm run test:python
       - run: npm run test:ui
       - name: NSIS translation and custom-page contracts
         run: npm run test:installer
       - name: SQL PowerShell contracts with mocked OS cmdlets
+        shell: powershell
         run: powershell -NoProfile -NonInteractive -File tests/windows-sql-contract.ps1
       - name: Pin release trust keys when configured
         shell: pwsh
