@@ -11,7 +11,7 @@ from a Windows desktop application, with an English or Bulgarian interface.
 
 ## Download
 
-**[Download MuOnline Web Manager for Windows](https://mega.nz/file/eFMFlZpS#R2T1iPSjXT7faTfhDy6CHrDKuujMivODo50m8Ati2Fs)**
+**[Download MuOnline Web Manager for Windows](https://mega.nz/file/GRt3DZDY#uOAuMS8W9mJV0ygbygZS9QmI6VMFYjI4w7lk65Dzz6M)**
 
 Use the Windows installer to get started. You do not need Node.js, npm or this
 source checkout to use the installed manager.
