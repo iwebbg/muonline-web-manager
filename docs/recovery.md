@@ -378,3 +378,9 @@ recovery boundaries. Do not delete the public network journal to bypass an incom
 setup. A missing release contract requires a compatible signed web release; it does
 not require dropping SQL databases or resetting WSL. Router/DNS/Cloudflare reachability
 remain separately verified.
+
+## Website settings recovery
+
+The `site-settings-changing` and `site-settings-recovery-required` phases block
+normal operations. Restore both private configuration files from the recorded
+`recoveryBackup`, then verify activation. See the [website settings recovery procedure](website-settings.md#applying-and-recovery). This operation does not run database migrations.

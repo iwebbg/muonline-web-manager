@@ -11,7 +11,7 @@ from a Windows desktop application, with an English or Bulgarian interface.
 
 ## Download
 
-**[Download MuOnline Web Manager for Windows](https://mega.nz/file/eFMFlZpS#R2T1iPSjXT7faTfhDy6CHrDKuujMivODo50m8Ati2Fs)**
+**[Download MuOnline Web Manager for Windows](https://mega.nz/file/GRt3DZDY#uOAuMS8W9mJV0ygbygZS9QmI6VMFYjI4w7lk65Dzz6M)**
 
 Use the Windows installer to get started. You do not need Node.js, npm or this
 source checkout to use the installed manager.
@@ -22,6 +22,7 @@ source checkout to use the installed manager.
 - Configures the web database and restricted SQL logins against your SQL Server.
 - Supports Local, IP and Domain + SSL access, with changes available after installation.
 - Opens your website and admin panel directly from the Control panel.
+- Configures payments, SMTP, S3 credentials, reCAPTCHA and website options after installation.
 - Provides service controls, logs, SQL diagnostics and web administrator management.
 - Creates verified SQL backups before web updates and checks for new versions automatically.
 - Applies updates only when you choose Update.
@@ -80,6 +81,7 @@ On Windows, `npm run dist:win` builds the assisted NSIS installer. The
 [Windows CI workflow](.github/workflows/windows.yml) builds and retains review
 artifacts without publishing. It can run after the branch is pushed by an operator.
 
+- [Website settings (manager 0.2.0)](docs/website-settings.md)
 - [Architecture and security boundaries](docs/architecture.md)
 - [Build, sign and distribute releases](docs/releases.md)
 - [Web administrator and Game Master management](docs/administrators.md)
@@ -92,6 +94,10 @@ artifacts without publishing. It can run after the branch is pushed by an operat
 Production release signing requires an operator-owned Ed25519 key, its public key
 pinned in `build/trust.json`, and actual published artifacts. An empty trust store
 blocks deployment; keep the pinned public key matched to the release signing key. No R2 objects are assumed to exist or uploaded by CI.
+
+## License
+
+[MIT License](LICENSE). Copyright © 2026 InterWeb Ltd.
 
 Support development: [Buy Me a Coffee](https://buymeacoffee.com/interweb.bg) ·
 [Ko-fi](https://ko-fi.com/interwebltd) · [PayPal](https://paypal.me/interwebltd).

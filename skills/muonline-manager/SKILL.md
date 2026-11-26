@@ -7,6 +7,7 @@ Read the appropriate repository document before changing a contract:
 
 - [Architecture](../../docs/architecture.md): IPC, WSL identity, Compose and access modes.
 - [Releases](../../docs/releases.md): production exports, signing, R2 paths, manager updates.
+- [Website settings](../../docs/website-settings.md): post-install payment/SMTP/S3/reCAPTCHA controls, private secret patches and configuration recovery.
 - [Web access](../../docs/web-access.md): Laravel nginx/SSL contract, Windows public ports, privileged refresh task and legacy recovery.
 - [Recovery](../../docs/recovery.md): partial bootstrap, config restore and migration failure.
 - [Review](../../docs/review.md): evidence and outstanding Windows acceptance checks.

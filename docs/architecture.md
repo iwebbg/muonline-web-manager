@@ -247,3 +247,11 @@ restart/success outcomes are separate dialogs; closing an outcome never reboots 
 cancels backend work. Completed setup is announced only after a fresh ready status.
 The desktop journal retains `restartBoot` until a different Windows boot is measured,
 including across runtime reset, so a manager restart cannot bypass WSL activation.
+
+## Post-install website configuration
+
+Manager 0.2.0 adds fixed `siteSettings` and `saveSiteSettings` operations. The
+worker reads only allow-listed public fields and secret-presence flags, applies a
+validated revision-checked patch, and backs up/restores private config around service
+recreation. See [website settings](website-settings.md) for field coverage, capability
+detection, secret handling and recovery checkpoints.

@@ -704,3 +704,18 @@ This confirms the user's IP→Domain transition and working SSL access on that t
 machine. It is user-reported native evidence, separate from the automated mocked
 checks. It does not establish fresh Domain-first installation on every OS, renewal
 at expiry, Cloudflare proxy re-enablement, or address refresh after a Windows reboot.
+
+## Manager 0.2.0 website settings
+
+Local review adds a post-install Website settings screen in EN/BG. Validation
+uses Node/Python tests with mocked processes and disposable files plus the Electron
+smoke workflow. These checks cover private secret patches, stale edits, rollback
+checkpoints, modal progress and continued donation-footer visibility. See
+[website settings](website-settings.md) for scope and the recovery contract.
+
+Native Windows acceptance for this new flow remains pending: install the 0.2.0
+manager over the existing desktop app, confirm the existing website is detected,
+apply settings, verify recreated app/queue/scheduler receive them, and validate
+SMTP delivery, reCAPTCHA and payment-provider sandbox webhooks separately. Do not
+use production payments for acceptance. S3 credentials are preparation only until
+the web release includes the S3 driver; scheduled backup work is not implemented.
