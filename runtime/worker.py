@@ -38,7 +38,10 @@ def diagnostic_secrets(value):
     """Collect known secrets recursively without saving the request or private state."""
     if isinstance(value, dict):
         for key, item in value.items():
-            if isinstance(item, str) and item and (re.search(r'password|secret|token|key', key, re.I) or key in ('sqlAdmin', 'admin_username')):
+            sensitive = re.search(r'password|secret|token|key|client_id|webhook_id|mail_username|mail_url', key, re.I) or key in ('sqlAdmin', 'admin_username')
+            if sensitive and isinstance(item, dict) and isinstance(item.get('value'), str):
+                DIAGNOSTIC_SECRETS.add(item['value'])
+            if isinstance(item, str) and item and sensitive:
                 DIAGNOSTIC_SECRETS.add(item)
             else:
                 diagnostic_secrets(item)
@@ -414,6 +417,244 @@ def update_access_environment(content, values):
     if missing:
         text += ('' if not text or text.endswith('\n') else '\n') + env_text(missing)
     return text
+
+
+SITE_FIELDS = json.loads(r'''[
+{"group": "payments", "key": "PAYMENTS_CURRENCY", "label": {"en": "Default currency", "bg": "\u041e\u0441\u043d\u043e\u0432\u043d\u0430 \u0432\u0430\u043b\u0443\u0442\u0430"}, "type": "text", "default": "EUR", "pattern": "[A-Z]{3}"},
+{"group": "payments", "key": "STRIPE_ENABLED", "label": {"en": "Stripe enabled", "bg": "Stripe \u0430\u043a\u0442\u0438\u0432\u0438\u0440\u0430\u043d"}, "type": "boolean", "default": "false"},
+{"group": "payments", "key": "STRIPE_SECRET_KEY", "label": {"en": "Stripe \u2014 Secret API key", "bg": "Stripe \u2014 \u0422\u0430\u0435\u043d API \u043a\u043b\u044e\u0447"}, "type": "secret", "default": ""},
+{"group": "payments", "key": "STRIPE_WEBHOOK_SECRET", "label": {"en": "Stripe \u2014 Webhook signing secret", "bg": "Stripe \u2014 \u041a\u043b\u044e\u0447 \u0437\u0430 \u043f\u043e\u0434\u043f\u0438\u0441\u0432\u0430\u043d\u0435 \u043d\u0430 webhook"}, "type": "secret", "default": ""},
+{"group": "payments", "key": "PAYPAL_ENABLED", "label": {"en": "PayPal enabled", "bg": "PayPal \u0430\u043a\u0442\u0438\u0432\u0438\u0440\u0430\u043d"}, "type": "boolean", "default": "false"},
+{"group": "payments", "key": "PAYPAL_MODE", "label": {"en": "PayPal mode", "bg": "PayPal \u0440\u0435\u0436\u0438\u043c"}, "type": "select", "default": "sandbox", "options": ["sandbox", "live"]},
+{"group": "payments", "key": "PAYPAL_CLIENT_ID", "label": {"en": "PayPal \u2014 Client ID", "bg": "PayPal \u2014 Client ID"}, "type": "secret", "default": ""},
+{"group": "payments", "key": "PAYPAL_SECRET", "label": {"en": "PayPal \u2014 Secret", "bg": "PayPal \u2014 \u0422\u0430\u0435\u043d \u043a\u043b\u044e\u0447"}, "type": "secret", "default": ""},
+{"group": "payments", "key": "PAYPAL_WEBHOOK_ID", "label": {"en": "PayPal \u2014 Webhook ID", "bg": "PayPal \u2014 Webhook ID"}, "type": "secret", "default": ""},
+{"group": "payments", "key": "REVOLUT_ENABLED", "label": {"en": "Revolut enabled", "bg": "Revolut \u0430\u043a\u0442\u0438\u0432\u0438\u0440\u0430\u043d"}, "type": "boolean", "default": "false"},
+{"group": "payments", "key": "REVOLUT_MODE", "label": {"en": "Revolut mode", "bg": "Revolut \u0440\u0435\u0436\u0438\u043c"}, "type": "select", "default": "sandbox", "options": ["sandbox", "live"]},
+{"group": "payments", "key": "REVOLUT_SECRET_KEY", "label": {"en": "Revolut \u2014 Secret API key", "bg": "Revolut \u2014 \u0422\u0430\u0435\u043d API \u043a\u043b\u044e\u0447"}, "type": "secret", "default": ""},
+{"group": "payments", "key": "REVOLUT_WEBHOOK_SECRET", "label": {"en": "Revolut \u2014 Webhook signing secret", "bg": "Revolut \u2014 \u041a\u043b\u044e\u0447 \u0437\u0430 \u043f\u043e\u0434\u043f\u0438\u0441\u0432\u0430\u043d\u0435 \u043d\u0430 webhook"}, "type": "secret", "default": ""},
+{"group": "payments", "key": "REVOLUT_API_VERSION", "label": {"en": "Revolut API version", "bg": "Revolut API \u0432\u0435\u0440\u0441\u0438\u044f"}, "type": "text", "default": "2026-08-17", "pattern": "\\d{4}-\\d{2}-\\d{2}"},
+{"group": "payments", "key": "REVOLUT_TAG_ENABLED", "label": {"en": "Manual Revolut.me payments enabled", "bg": "\u0420\u044a\u0447\u043d\u0438 Revolut.me \u043f\u043b\u0430\u0449\u0430\u043d\u0438\u044f"}, "type": "boolean", "default": "false"},
+{"group": "payments", "key": "REVOLUT_TAG", "label": {"en": "Revolut.me tag", "bg": "Revolut.me \u0442\u0430\u0433"}, "type": "text", "default": ""},
+{"group": "mail", "key": "MAIL_MAILER", "label": {"en": "Email delivery", "bg": "\u0418\u0437\u043f\u0440\u0430\u0449\u0430\u043d\u0435 \u043d\u0430 \u0438\u043c\u0435\u0439\u043b\u0438"}, "type": "select", "default": "log", "options": ["log", "smtp"]},
+{"group": "mail", "key": "MAIL_SCHEME", "label": {"en": "SMTP connection", "bg": "SMTP \u0432\u0440\u044a\u0437\u043a\u0430"}, "type": "select", "default": "null", "options": ["null", "smtp", "smtps"]},
+{"group": "mail", "key": "MAIL_HOST", "label": {"en": "SMTP host", "bg": "SMTP \u0441\u044a\u0440\u0432\u044a\u0440"}, "type": "text", "default": "127.0.0.1", "format": "host"},
+{"group": "mail", "key": "MAIL_PORT", "label": {"en": "SMTP port", "bg": "SMTP \u043f\u043e\u0440\u0442"}, "type": "number", "default": "2525", "minimum": 1, "maximum": 65535},
+{"group": "mail", "key": "MAIL_USERNAME", "label": {"en": "SMTP username", "bg": "SMTP \u043f\u043e\u0442\u0440\u0435\u0431\u0438\u0442\u0435\u043b"}, "type": "secret", "default": ""},
+{"group": "mail", "key": "MAIL_PASSWORD", "label": {"en": "SMTP password", "bg": "SMTP \u043f\u0430\u0440\u043e\u043b\u0430"}, "type": "secret", "default": ""},
+{"group": "mail", "key": "MAIL_URL", "label": {"en": "Existing SMTP URL override (clear only)", "bg": "\u0421\u044a\u0449\u0435\u0441\u0442\u0432\u0443\u0432\u0430\u0449 SMTP URL (\u0441\u0430\u043c\u043e \u0438\u0437\u0447\u0438\u0441\u0442\u0432\u0430\u043d\u0435)"}, "type": "secret", "default": "", "clearOnly": true},
+{"group": "mail", "key": "MAIL_FROM_ADDRESS", "label": {"en": "Sender email", "bg": "\u0418\u043c\u0435\u0439\u043b \u043d\u0430 \u043f\u043e\u0434\u0430\u0442\u0435\u043b\u044f"}, "type": "text", "default": "hello@example.com", "format": "email"},
+{"group": "mail", "key": "MAIL_FROM_NAME", "label": {"en": "Sender name", "bg": "\u0418\u043c\u0435 \u043d\u0430 \u043f\u043e\u0434\u0430\u0442\u0435\u043b\u044f"}, "type": "text", "default": "MuOnline Web"},
+{"group": "mail", "key": "MAIL_EHLO_DOMAIN", "label": {"en": "SMTP EHLO domain (optional)", "bg": "SMTP EHLO \u0434\u043e\u043c\u0435\u0439\u043d (\u043f\u043e \u0438\u0437\u0431\u043e\u0440)"}, "type": "text", "default": "", "format": "host", "optional": true},
+{"group": "storage", "key": "AWS_ACCESS_KEY_ID", "label": {"en": "Access key ID", "bg": "Access key ID"}, "type": "secret", "default": ""},
+{"group": "storage", "key": "AWS_SECRET_ACCESS_KEY", "label": {"en": "Secret access key", "bg": "\u0422\u0430\u0435\u043d \u043a\u043b\u044e\u0447"}, "type": "secret", "default": ""},
+{"group": "storage", "key": "AWS_DEFAULT_REGION", "label": {"en": "Region", "bg": "\u0420\u0435\u0433\u0438\u043e\u043d"}, "type": "text", "default": "us-east-1"},
+{"group": "storage", "key": "AWS_BUCKET", "label": {"en": "Bucket", "bg": "Bucket"}, "type": "text", "default": ""},
+{"group": "storage", "key": "AWS_ENDPOINT", "label": {"en": "S3-compatible endpoint (HTTPS)", "bg": "S3-\u0441\u044a\u0432\u043c\u0435\u0441\u0442\u0438\u043c \u0430\u0434\u0440\u0435\u0441 (HTTPS)"}, "type": "url", "default": ""},
+{"group": "storage", "key": "AWS_URL", "label": {"en": "Public URL (optional)", "bg": "\u041f\u0443\u0431\u043b\u0438\u0447\u0435\u043d URL (\u043f\u043e \u0438\u0437\u0431\u043e\u0440)"}, "type": "url", "default": ""},
+{"group": "storage", "key": "AWS_USE_PATH_STYLE_ENDPOINT", "label": {"en": "Use path-style endpoint", "bg": "\u0418\u0437\u043f\u043e\u043b\u0437\u0432\u0430\u0439 path-style \u0430\u0434\u0440\u0435\u0441"}, "type": "boolean", "default": "false"},
+{"group": "security", "key": "RECAPTCHA_ENABLED", "label": {"en": "Google reCAPTCHA v3 enabled", "bg": "Google reCAPTCHA v3 \u0430\u043a\u0442\u0438\u0432\u0438\u0440\u0430\u043d\u0430"}, "type": "boolean", "default": "false"},
+{"group": "security", "key": "RECAPTCHA_SITE_KEY", "label": {"en": "reCAPTCHA site key", "bg": "reCAPTCHA \u043f\u0443\u0431\u043b\u0438\u0447\u0435\u043d \u043a\u043b\u044e\u0447"}, "type": "text", "default": ""},
+{"group": "security", "key": "RECAPTCHA_SECRET_KEY", "label": {"en": "reCAPTCHA secret key", "bg": "reCAPTCHA \u0442\u0430\u0435\u043d \u043a\u043b\u044e\u0447"}, "type": "secret", "default": ""},
+{"group": "security", "key": "RECAPTCHA_HOSTNAME", "label": {"en": "reCAPTCHA hostname (optional)", "bg": "reCAPTCHA \u0434\u043e\u043c\u0435\u0439\u043d (\u043f\u043e \u0438\u0437\u0431\u043e\u0440)"}, "type": "text", "default": "", "format": "host", "optional": true},
+{"group": "security", "key": "RECAPTCHA_MINIMUM_SCORE", "label": {"en": "Minimum score", "bg": "\u041c\u0438\u043d\u0438\u043c\u0430\u043b\u043d\u0430 \u043e\u0446\u0435\u043d\u043a\u0430"}, "type": "number", "default": "0.5", "minimum": 0, "maximum": 1, "step": 0.1},
+{"group": "general", "key": "APP_NAME", "label": {"en": "Website name", "bg": "\u0418\u043c\u0435 \u043d\u0430 \u0441\u0430\u0439\u0442\u0430"}, "type": "text", "default": "MuOnline Web"},
+{"group": "general", "key": "APP_LOCALE", "label": {"en": "Default website language", "bg": "\u041e\u0441\u043d\u043e\u0432\u0435\u043d \u0435\u0437\u0438\u043a \u043d\u0430 \u0441\u0430\u0439\u0442\u0430"}, "type": "select", "default": "en", "options": ["en", "bg"]},
+{"group": "general", "key": "APP_FALLBACK_LOCALE", "label": {"en": "Fallback language", "bg": "\u0420\u0435\u0437\u0435\u0440\u0432\u0435\u043d \u0435\u0437\u0438\u043a"}, "type": "select", "default": "en", "options": ["en", "bg"]},
+{"group": "general", "key": "GAME_SERVER_NAME", "label": {"en": "Game server display name", "bg": "\u0418\u043c\u0435 \u043d\u0430 \u0438\u0433\u0440\u043e\u0432\u0438\u044f \u0441\u044a\u0440\u0432\u044a\u0440"}, "type": "text", "default": ""},
+{"group": "general", "key": "GAME_SERVER_STATUS_HOST", "label": {"en": "Game server status host", "bg": "\u0410\u0434\u0440\u0435\u0441 \u0437\u0430 \u0441\u0442\u0430\u0442\u0443\u0441 \u043d\u0430 \u0438\u0433\u0440\u043e\u0432\u0438\u044f \u0441\u044a\u0440\u0432\u044a\u0440"}, "type": "text", "default": "", "format": "host"},
+{"group": "general", "key": "GAME_SERVER_STATUS_PORT", "label": {"en": "Game server status port", "bg": "\u041f\u043e\u0440\u0442 \u0437\u0430 \u0441\u0442\u0430\u0442\u0443\u0441 \u043d\u0430 \u0438\u0433\u0440\u043e\u0432\u0438\u044f \u0441\u044a\u0440\u0432\u044a\u0440"}, "type": "number", "default": "55901", "minimum": 1, "maximum": 65535},
+{"group": "general", "key": "GAME_SERVER_STATUS_TIMEOUT_SECONDS", "label": {"en": "Status timeout (seconds)", "bg": "\u0412\u0440\u0435\u043c\u0435 \u0437\u0430 \u0438\u0437\u0447\u0430\u043a\u0432\u0430\u043d\u0435 \u043d\u0430 \u0441\u0442\u0430\u0442\u0443\u0441 (\u0441\u0435\u043a\u0443\u043d\u0434\u0438)"}, "type": "number", "default": "0.5", "minimum": 0.1, "maximum": 30, "step": 0.1},
+{"group": "general", "key": "GAME_SERVER_STATUS_CACHE_SECONDS", "label": {"en": "Status cache (seconds)", "bg": "\u041a\u0435\u0448 \u043d\u0430 \u0441\u0442\u0430\u0442\u0443\u0441\u0430 (\u0441\u0435\u043a\u0443\u043d\u0434\u0438)"}, "type": "number", "default": "10", "minimum": 1, "maximum": 3600, "step": 1},
+{"group": "general", "key": "GAME_RANKING_LIMIT", "label": {"en": "Ranking limit", "bg": "\u0411\u0440\u043e\u0439 \u043f\u043e\u0437\u0438\u0446\u0438\u0438 \u0432 \u043a\u043b\u0430\u0441\u0430\u0446\u0438\u0438\u0442\u0435"}, "type": "number", "default": "10", "minimum": 1, "maximum": 1000, "step": 1},
+{"group": "general", "key": "GAME_EVENT_HOME_LIMIT", "label": {"en": "Homepage event limit", "bg": "\u0411\u0440\u043e\u0439 \u0441\u044a\u0431\u0438\u0442\u0438\u044f \u043d\u0430 \u043d\u0430\u0447\u0430\u043b\u043d\u0430\u0442\u0430 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0430"}, "type": "number", "default": "3", "minimum": 1, "maximum": 100, "step": 1},
+{"group": "general", "key": "GAME_MARKET_LISTING_DURATION_DAYS", "label": {"en": "Market listing duration (days)", "bg": "\u041f\u0440\u043e\u0434\u044a\u043b\u0436\u0438\u0442\u0435\u043b\u043d\u043e\u0441\u0442 \u043d\u0430 \u043e\u0431\u044f\u0432\u0430 (\u0434\u043d\u0438)"}, "type": "number", "default": "30", "minimum": 1, "maximum": 365, "step": 1},
+{"group": "general", "key": "GAME_PASSWORD_RESET_TTL_MINUTES", "label": {"en": "Password reset validity (minutes)", "bg": "\u0412\u0430\u043b\u0438\u0434\u043d\u043e\u0441\u0442 \u043d\u0430 \u0432\u044a\u0437\u0441\u0442\u0430\u043d\u043e\u0432\u044f\u0432\u0430\u043d\u0435 \u043d\u0430 \u043f\u0430\u0440\u043e\u043b\u0430 (\u043c\u0438\u043d\u0443\u0442\u0438)"}, "type": "number", "default": "60", "minimum": 1, "maximum": 10080, "step": 1},
+{"group": "general", "key": "GAME_ACCOUNT_ACTIVATION_TTL_MINUTES", "label": {"en": "Account activation validity (minutes)", "bg": "\u0412\u0430\u043b\u0438\u0434\u043d\u043e\u0441\u0442 \u043d\u0430 \u0430\u043a\u0442\u0438\u0432\u0430\u0446\u0438\u044f \u043d\u0430 \u0430\u043a\u0430\u0443\u043d\u0442 (\u043c\u0438\u043d\u0443\u0442\u0438)"}, "type": "number", "default": "1440", "minimum": 1, "maximum": 43200, "step": 1},
+{"group": "general", "key": "SESSION_LIFETIME", "label": {"en": "Session lifetime (minutes)", "bg": "\u041f\u0440\u043e\u0434\u044a\u043b\u0436\u0438\u0442\u0435\u043b\u043d\u043e\u0441\u0442 \u043d\u0430 \u0441\u0435\u0441\u0438\u044f (\u043c\u0438\u043d\u0443\u0442\u0438)"}, "type": "number", "default": "120", "minimum": 1, "maximum": 10080, "step": 1},
+{"group": "general", "key": "GAME_EVENT_TIMEZONE", "label": {"en": "Event timezone", "bg": "\u0427\u0430\u0441\u043e\u0432\u0430 \u0437\u043e\u043d\u0430 \u0437\u0430 \u0441\u044a\u0431\u0438\u0442\u0438\u044f"}, "type": "text", "default": "Europe/Sofia", "format": "timezone"},
+{"group": "general", "key": "GAME_CONTENT_TIMEZONE", "label": {"en": "Content timezone", "bg": "\u0427\u0430\u0441\u043e\u0432\u0430 \u0437\u043e\u043d\u0430 \u0437\u0430 \u0441\u044a\u0434\u044a\u0440\u0436\u0430\u043d\u0438\u0435"}, "type": "text", "default": "Europe/Sofia", "format": "timezone"}
+]''')
+
+
+def site_environment():
+    """Parse dotenv without executing it; resolve only literal ${NAME} references.
+
+    Non-editable multiline values are preserved by update_access_environment.
+    Unsupported expressions in editable fields fail closed instead of guessing.
+    """
+    content = (APP / '.env').read_bytes().decode('utf-8')
+    values = {}
+    pattern = r'''(?m)^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|([^\r\n]*))[ \t]*(?:\#[^\r\n]*)?$'''
+    for match in re.finditer(pattern, content):
+        key = match[1]
+        require(key not in values, 'Duplicate environment keys. Restore a consistent site environment.')
+        if match[2] is not None:
+            # Manager-generated \$ must remain literal; dotenv expands only unescaped $.
+            value = re.sub(r'(?<!\\)\$\{([A-Za-z_][A-Za-z0-9_]*)\}', lambda m: values.get(m[1], ''), match[2])
+            value = re.sub(r'\\([\\"$])', r'\1', value)
+        elif match[3] is not None:
+            value = match[3].replace("\\'", "'").replace('\\\\', '\\')
+        else:
+            require(not match[4].lstrip().startswith(('"', "'")), 'Site environment contains an unterminated quoted value.')
+            value = re.split(r'\s+#', match[4], maxsplit=1)[0].strip()
+        values[key] = value
+    for field in SITE_FIELDS:
+        if field['key'] in values and field['type'] == 'secret' and values[field['key']] not in ('', 'null', '(null)'):
+            DIAGNOSTIC_SECRETS.add(values[field['key']])
+    return content, values
+
+
+def site_supported_fields():
+    """Only offer settings actually referenced by the installed Laravel release."""
+    source = '\n'.join(file.read_text(encoding='utf-8') for file in (APP / 'config').glob('*.php'))
+    return set(re.findall(r'''\benv\(\s*['"]([A-Z][A-Z0-9_]*)['"]''', source))
+
+
+def site_settings(state):
+    """Expose allow-listed values and secret-presence flags, never credentials."""
+    require(state.get('phase') == 'ready', 'Recover installation before changing website settings.')
+    content, values = site_environment()
+    supported = site_supported_fields()
+    fields = [dict(field, supported=field['key'] in supported) for field in SITE_FIELDS]
+    public = {}
+    configured = {}
+    for field in fields:
+        key = field['key']
+        value = values.get(key, field['default'])
+        if field['type'] == 'secret':
+            configured[key] = value not in ('', 'null', '(null)')
+        else:
+            # A corrupt/manually edited field must not echo multiline or credential URLs to UI.
+            if re.search(r'[\x00-\x1f\x7f]', value):
+                value = ''
+            if field['type'] == 'url' and urllib.parse.urlsplit(value).username:
+                value = ''
+            public[key] = value
+    metadata = APP / 'vendor/composer/installed.json'
+    has_s3 = False
+    if metadata.is_file():
+        installed = json.loads(metadata.read_text())
+        packages = installed.get('packages', []) if isinstance(installed, dict) else installed
+        has_s3 = any(item.get('name') == 'league/flysystem-aws-s3-v3' for item in packages)
+    return {'revision': hashlib.sha256(content.encode()).hexdigest(), 'fields': fields,
+            'values': public, 'configured': configured, 's3DriverInstalled': has_s3,
+            'webhooks': {provider: state['access']['url'].rstrip('/') + '/payments/webhooks/' + provider for provider in ('stripe', 'paypal', 'revolut')}}
+
+
+def validate_site_changes(settings, current, supported):
+    """Validate a bounded patch; secrets have explicit keep/replace/clear semantics."""
+    require(isinstance(settings, dict) and settings.get('confirmed') is True,
+            'Confirm applying the website settings.')
+    changes = settings.get('changes')
+    require(isinstance(changes, dict) and 0 < len(changes) <= len(SITE_FIELDS), 'Choose at least one website setting to change.')
+    fields = {field['key']: field for field in SITE_FIELDS}
+    result = {}
+    for key, value in changes.items():
+        require(key in fields and key in supported, 'Unsupported website setting.')
+        field = fields[key]
+        if field['type'] == 'secret':
+            require(isinstance(value, dict) and set(value) <= {'operation', 'value'}, 'Invalid secret change.')
+            operation = value.get('operation')
+            require(operation in ('replace', 'clear'), 'Invalid secret change.')
+            require(not field.get('clearOnly') or operation == 'clear', 'Only clearing the SMTP URL override is supported.')
+            value = '' if operation == 'clear' else value.get('value')
+        require(isinstance(value, str) and len(value) <= 2048 and not re.search(r'[\x00-\x1f\x7f]', value), 'Invalid website setting value.')
+        if field['type'] == 'secret' and changes[key]['operation'] == 'replace':
+            require(bool(value.strip()), 'Enter a replacement secret or choose Clear.')
+        if field['type'] == 'boolean':
+            require(value in ('true', 'false'), 'Invalid website switch.')
+        elif field['type'] == 'select':
+            require(value in field['options'], 'Invalid website setting choice.')
+        elif field['type'] == 'number':
+            require(re.fullmatch(r'\d+(?:\.\d+)?', value), 'Invalid website setting number.')
+            number = float(value)
+            require(field['minimum'] <= number <= field['maximum'] and (field.get('step', 1) != 1 or number.is_integer()), 'Website setting number is outside its allowed range.')
+        elif field['type'] == 'url' and value:
+            url = urllib.parse.urlsplit(value)
+            require(url.scheme == 'https' and bool(url.hostname) and not url.username and not url.password and not url.query and not url.fragment, 'Use a clean HTTPS endpoint without credentials.')
+        if field.get('pattern'):
+            require(re.fullmatch(field['pattern'], value), 'Invalid website setting format.')
+        if field.get('format') == 'host' and value:
+            try:
+                ipaddress.ip_address(value)
+            except ValueError:
+                require(len(value) <= 253 and re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?', value), 'Invalid server hostname.')
+        if field.get('format') == 'email':
+            require(re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', value), 'Invalid sender email address.')
+        if field.get('format') == 'timezone':
+            from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+            try:
+                ZoneInfo(value)
+            except (ValueError, ZoneInfoNotFoundError):
+                raise ValueError('Invalid timezone.') from None
+        result[key] = value
+    merged = dict(current, **result)
+    enabled = lambda key: str(merged.get(key, 'false')).lower() == 'true'
+    present = lambda key: merged.get(key, '') not in ('', 'null', '(null)')
+    # Validate affected groups only, so an unrelated legacy configuration can still be repaired.
+    for prefix, keys in [('STRIPE', ('SECRET_KEY', 'WEBHOOK_SECRET')), ('PAYPAL', ('CLIENT_ID', 'SECRET', 'WEBHOOK_ID')), ('REVOLUT', ('SECRET_KEY', 'WEBHOOK_SECRET'))]:
+        if any(key.startswith(prefix + '_') for key in result) and enabled(prefix + '_ENABLED'):
+            require(all(present(prefix + '_' + key) for key in keys), 'Enabled payment provider requires all API and webhook credentials.')
+            require(urllib.parse.urlsplit(merged.get('APP_URL', '')).scheme == 'https', 'Payment providers require Domain + SSL website access.')
+    if any(key.startswith('REVOLUT_TAG') for key in result) and enabled('REVOLUT_TAG_ENABLED'):
+        require(present('REVOLUT_TAG'), 'Enter the Revolut.me tag.')
+    if any(key.startswith('MAIL_') for key in result):
+        require(not present('MAIL_URL'), 'Clear the existing SMTP URL override before editing SMTP settings.')
+        if merged.get('MAIL_MAILER') == 'smtp':
+            require(present('MAIL_HOST') and present('MAIL_PORT') and present('MAIL_FROM_ADDRESS'), 'SMTP requires a host, port and sender email.')
+    if any(key.startswith('RECAPTCHA_') for key in result) and enabled('RECAPTCHA_ENABLED'):
+        require(present('RECAPTCHA_SITE_KEY') and present('RECAPTCHA_SECRET_KEY'), 'Enabled reCAPTCHA requires the site and secret keys.')
+    if 'APP_NAME' in result:
+        require(bool(result['APP_NAME'].strip()), 'Enter a website name.')
+    return result
+
+
+def apply_site_settings(state, settings):
+    """Back up, apply, clear Laravel config and recreate services; restore exact config on failure.
+
+    This operation never changes SQL schema, APP_KEY, access mode, queues or storage paths.
+    A process interruption leaves a recovery checkpoint; no silent retry bypasses it.
+    """
+    require(state.get('phase') == 'ready', 'Recover installation before changing website settings.')
+    content, current = site_environment()
+    require(isinstance(settings, dict) and settings.get('revision') == hashlib.sha256(content.encode()).hexdigest(), 'Website settings changed. Reload the settings and try again.')
+    changes = validate_site_changes(settings, current, site_supported_fields())
+    for field in SITE_FIELDS:
+        if field['type'] == 'secret' and changes.get(field['key']):
+            DIAGNOSTIC_SECRETS.add(changes[field['key']])
+    previous = json.loads(json.dumps(state))
+    backup = ROOT / 'backups' / ('site-settings-' + datetime.datetime.now(datetime.UTC).strftime('%Y%m%dT%H%M%S') + '-' + secrets.token_hex(3))
+    backup.mkdir(parents=True, mode=0o700)
+    for source in (STATE, APP / '.env'):
+        shutil.copy2(source, backup / source.name)
+        os.chmod(backup / source.name, 0o600)
+    save_state(dict(previous, phase='site-settings-changing', recoveryBackup=str(backup)))
+
+    def activate():
+        compose('run', '--rm', '--no-deps', '--entrypoint', 'php', 'app', 'artisan', 'config:clear', '--no-interaction')
+        compose('up', '-d', '--force-recreate', '--wait', '--wait-timeout', '300')
+
+    try:
+        compose('stop', 'queue', 'scheduler')
+        atomic(APP / '.env', update_access_environment(content, changes))
+        os.chown(APP / '.env', 33, 33)
+        state['environment'].update(changes)
+        activate()
+        save_state(dict(state, phase='ready'))
+    except Exception:
+        try:
+            atomic(APP / '.env', (backup / '.env').read_bytes())
+            os.chown(APP / '.env', 33, 33)
+            atomic(STATE, (backup / STATE.name).read_bytes())
+            activate()
+            state.clear()
+            state.update(previous)
+        except Exception:
+            save_state(dict(previous, phase='site-settings-recovery-required', recoveryBackup=str(backup)))
+            raise RuntimeError('Website settings and recovery failed. Recover configuration manually. Backup: ' + str(backup)) from None
+        raise RuntimeError('Website settings failed; previous configuration restored. Backup: ' + str(backup)) from None
+    return site_settings(state)
 
 
 def game_write_mode():
@@ -1231,6 +1472,10 @@ def dispatch(request):
             error = str(exception)
         return {'installed': True, 'version': state['version'], 'phase': state.get('phase'), 'access': state['access'], 'gameWrites': game_write_mode(), 'services': services, 'runtimeError': error, 'uninstallTarget': uninstall_target(state), 'bootstrapSqlEndpoint': bootstrap_sql_endpoint(state) if state.get('phase') == 'bootstrap-pending' else None, 'localSqlInstanceId': state.get('localSqlInstanceId')}
     state = load_state()
+    if action == 'siteSettings':
+        return site_settings(state)
+    if action == 'saveSiteSettings':
+        return apply_site_settings(state, request.get('siteSettings'))
     if action == 'setGameWrites':
         return apply_game_writes(state, request.get('gameWrites'))
     if action == 'resumeInstall':
@@ -1283,7 +1528,7 @@ def main():
             request = json.load(sys.stdin)
             DEVELOPMENT_DIAGNOSTICS = request.get('developmentDiagnostics') is True
             RECORD_DIAGNOSTICS = request.get('recordDiagnostics') is True
-            DIAGNOSTIC_ACTION = request.get('action') if request.get('action') in ('uninstallDatabase', 'install', 'resumeInstall', 'setGameWrites', 'prepareWsl', 'linuxStatus', 'prerequisites', 'status', 'logs', 'developmentLogs', 'start', 'stop', 'restart', 'update', 'backup', 'admin', 'adminList', 'adminUpdate', 'adminDelete', 'doctor', 'access') else 'unknown'
+            DIAGNOSTIC_ACTION = request.get('action') if request.get('action') in ('siteSettings', 'saveSiteSettings', 'uninstallDatabase', 'install', 'resumeInstall', 'setGameWrites', 'prepareWsl', 'linuxStatus', 'prerequisites', 'status', 'logs', 'developmentLogs', 'start', 'stop', 'restart', 'update', 'backup', 'admin', 'adminList', 'adminUpdate', 'adminDelete', 'doctor', 'access') else 'unknown'
             if DEVELOPMENT_DIAGNOSTICS or RECORD_DIAGNOSTICS:
                 diagnostic_secrets(request)
             response = {'ok': True, 'result': dispatch(request)}

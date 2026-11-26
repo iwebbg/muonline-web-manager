@@ -2,6 +2,32 @@ import { resolveLocale, translate } from './i18n.js';
 
 /** Known application messages only. Arbitrary logs and SQL diagnostics are not translated. */
 const bulgarian = {
+  "Duplicate environment keys. Restore a consistent site environment.": "Има повторени ключове в конфигурацията. Възстанови еднозначна конфигурация на сайта.",
+  "Recover installation before changing website settings.": "Възстанови инсталацията, преди да променяш настройките на сайта.",
+  "Confirm applying the website settings.": "Потвърди прилагането на настройките на сайта.",
+  "Choose at least one website setting to change.": "Промени поне една настройка на сайта.",
+  "Unsupported website setting.": "Настройката не се поддържа от инсталирания сайт.",
+  "Invalid secret change.": "Невалидна промяна на тайна стойност.",
+  "Only clearing the SMTP URL override is supported.": "Съществуващият SMTP URL може само да бъде изчистен.",
+  "Invalid website setting value.": "Невалидна стойност за настройка на сайта.",
+  "Enter a replacement secret or choose Clear.": "Въведи нова тайна стойност или избери Изчисти.",
+  "Invalid website switch.": "Невалидна стойност за активиране на настройка.",
+  "Invalid website setting choice.": "Невалиден избор за настройка на сайта.",
+  "Invalid website setting number.": "Невалидно число за настройка на сайта.",
+  "Website setting number is outside its allowed range.": "Числото е извън допустимия диапазон за настройката.",
+  "Use a clean HTTPS endpoint without credentials.": "Използвай HTTPS адрес без вградени данни за достъп.",
+  "Invalid website setting format.": "Невалиден формат за настройка на сайта.",
+  "Invalid server hostname.": "Невалиден адрес на сървър.",
+  "Invalid sender email address.": "Невалиден имейл адрес на подателя.",
+  "Invalid timezone.": "Невалидна часова зона.",
+  "Enabled payment provider requires all API and webhook credentials.": "Активният доставчик на плащания изисква всички API и webhook данни.",
+  "Payment providers require Domain + SSL website access.": "Доставчиците на плащания изискват достъп до сайта чрез Domain + SSL.",
+  "Enter the Revolut.me tag.": "Въведи Revolut.me тага.",
+  "Clear the existing SMTP URL override before editing SMTP settings.": "Изчисти съществуващия SMTP URL, преди да редактираш SMTP настройките.",
+  "SMTP requires a host, port and sender email.": "SMTP изисква сървър, порт и имейл на подателя.",
+  "Enabled reCAPTCHA requires the site and secret keys.": "Активната reCAPTCHA изисква публичен и таен ключ.",
+  "Enter a website name.": "Въведи име на сайта.",
+  "Website settings changed. Reload the settings and try again.": "Настройките са променени. Презареди ги и опитай отново.",
   "The web firewall rule could not be verified in active Windows policy. Check firewall policy before retrying.": "Web firewall правилото не може да бъде потвърдено в активната Windows политика. Провери firewall политиката преди повторен опит.",
   "The web release lacks Laravel production nginx files. Publish a compatible signed web release before using Domain + SSL.": "Web release-ът няма нужните Laravel production nginx файлове. Публикувай съвместим подписан web release преди Domain + SSL.",
   "Windows web access setup did not complete. Accept the UAC request and inspect the support log before retrying.": "Настройването на Windows достъпа до сайта не завърши. Потвърди UAC заявката и провери support лога преди повторен опит.",
@@ -178,6 +204,8 @@ const bulgarian = {
 };
 
 const prefixes = [
+  ['Website settings failed; previous configuration restored. Backup: ', 'Прилагането е неуспешно; предишната конфигурация е възстановена. Архив: '],
+  ['Website settings and recovery failed. Recover configuration manually. Backup: ', 'Прилагането и възстановяването са неуспешни. Възстанови конфигурацията ръчно. Архив: '],
   ['SQL endpoint configuration recovery failed. Restore the private backup: ', 'Възстановяването на SQL конфигурацията е неуспешно. Възстанови частния архив: '],
   ['Cannot start required executable: ', 'Нужната програма не може да бъде стартирана: '],
   ['Incomplete runtime release: ', 'Непълен runtime release: '],

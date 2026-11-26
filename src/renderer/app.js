@@ -1,3 +1,4 @@
+import { siteSettingsPage, receiveSiteSettings, siteSettingsInput, bindSiteSettings, syncSiteSecretControls } from './site-settings/view.js';
 import { publicInstallationSettings } from '../shared/installation-settings.js';
 import { InstallationOutcome } from './outcome.js';
 import { OperationProgress } from './progress.js';
@@ -97,7 +98,7 @@ async function refreshSetupStatus() {
 
 /** Present operation names without translating the underlying IPC identifiers. */
 function actionLabel(action) {
-  const names = { sqlSuggest: 'sqlSetup.detect', uninstallRuntime: 'uninstall.title', openLogs: 'logs.open', setGameWrites: 'writes.apply', openWebsite: 'openWebsite', openAdmin: 'openAdmin', adminList: 'admins.refresh', adminUpdate: 'admins.save', adminDelete: 'admins.delete', sqlInspect: 'sql.inspect', sqlDiagnose: 'sql.run', sqlPlan: 'sql.preview', sqlApply: 'sql.apply', sqlCopyReport: 'sql.copyReport', sqlCopyPlan: 'sql.copyCommand', status: 'checkStatus', admin: 'createAdmin', backup: 'createBackup', update: 'updateWeb', updates: 'checkUpdates', access: 'applyAccess', settings: 'settingsTitle' };
+  const names = { siteSettings: 'site.reload', saveSiteSettings: 'site.save', sqlSuggest: 'sqlSetup.detect', uninstallRuntime: 'uninstall.title', openLogs: 'logs.open', setGameWrites: 'writes.apply', openWebsite: 'openWebsite', openAdmin: 'openAdmin', adminList: 'admins.refresh', adminUpdate: 'admins.save', adminDelete: 'admins.delete', sqlInspect: 'sql.inspect', sqlDiagnose: 'sql.run', sqlPlan: 'sql.preview', sqlApply: 'sql.apply', sqlCopyReport: 'sql.copyReport', sqlCopyPlan: 'sql.copyCommand', status: 'checkStatus', admin: 'createAdmin', backup: 'createBackup', update: 'updateWeb', updates: 'checkUpdates', access: 'applyAccess', settings: 'settingsTitle' };
   return t(names[action] ?? action);
 }
 
@@ -115,6 +116,7 @@ function renderOutput() {
     if (['install', 'resumeInstall'].includes(lastOutput.action)) { output.textContent = t('installationCompleteShort'); return; }
     if (['logs', 'openLogs'].includes(lastOutput.action)) { output.textContent = t('logs.opened'); return; }
     if (lastOutput.action === 'sqlSuggest') { output.textContent = t(localSqlSuggestion ? 'sqlSetup.suggest' : 'sqlSetup.notDetected', localSqlSuggestion ?? {}); return; }
+    if (['siteSettings', 'saveSiteSettings'].includes(lastOutput.action)) { output.textContent = t(lastOutput.action === 'siteSettings' ? 'site.loaded' : 'site.saved'); return; }
     if (lastOutput.action === 'status') { output.textContent = t('statusRefreshed'); return; }
     if (lastOutput.action === 'prerequisites') { output.textContent = t('prerequisitesReady'); return; }
     if (lastOutput.action === 'uninstallRuntime') { output.textContent = t('uninstall.done'); return; }
@@ -163,6 +165,7 @@ function changeLanguage(value, preserveFields = true) {
       }
     }
   }
+  if (page === 'site') syncSiteSecretControls(document.querySelector('#siteSettingsForm'));
   if (page === 'sql') populateSql(t, sqlState, perform);
   renderOutput();
 }
@@ -192,9 +195,10 @@ function render() {
   translateShell();
   document.querySelectorAll('[data-page]').forEach(button => button.classList.toggle('selected', button.dataset.page === page));
   const pages = {
+    site: siteSettingsPage(t, language),
     sql: sqlPage(t),
     support: supportPage(t),
-    overview: `<h1>${t('overviewTitle')}</h1><p class="lead">${t('overviewLead')}</p><div class="actions website-links"><button type="button" class="primary" data-action="openWebsite" disabled>${t('openWebsite')} ↗</button><button type="button" data-action="openAdmin" disabled>${t('openAdmin')} ↗</button></div><p id="websiteLinksHint" class="hint">${t('websiteLinksHint')}</p><div class="cards"><div class="card"><small>${t('webApplicationLabel')}</small><strong id="webVersion">${t('unchecked')}</strong><p>${t('webVersionHint')}</p></div><div class="card"><small>${t('accessLabel')}</small><strong id="accessMode">${t('unchecked')}</strong><p id="siteUrl">localhost / IP / Domain + SSL</p></div><div class="card"><small>${t('managerLabel')}</small><strong id="managerVersion">0.1.0</strong><p>${t('managerDescription')}</p></div></div>${servicesPanel(t)}${uninstallPanel()}`,
+    overview: `<h1>${t('overviewTitle')}</h1><p class="lead">${t('overviewLead')}</p><div class="actions website-links"><button type="button" class="primary" data-action="openWebsite" disabled>${t('openWebsite')} ↗</button><button type="button" data-action="openAdmin" disabled>${t('openAdmin')} ↗</button></div><p id="websiteLinksHint" class="hint">${t('websiteLinksHint')}</p><div class="cards"><div class="card"><small>${t('webApplicationLabel')}</small><strong id="webVersion">${t('unchecked')}</strong><p>${t('webVersionHint')}</p></div><div class="card"><small>${t('accessLabel')}</small><strong id="accessMode">${t('unchecked')}</strong><p id="siteUrl">localhost / IP / Domain + SSL</p></div><div class="card"><small>${t('managerLabel')}</small><strong id="managerVersion">0.2.0</strong><p>${t('managerDescription')}</p></div></div>${servicesPanel(t)}${uninstallPanel()}`,
     install: `<h1>${t('installTitle')}</h1><p class="lead">${t('installLead')}</p><p id="installRelease" class="hint"></p><form id="installForm"><h2>${t('sqlTitle')}</h2><div class="grid"><label>${t('sqlHost')}<input name="sqlHost" required value="127.0.0.1" placeholder="192.168.1.10"></label><label>${t('sqlPort')}<input name="sqlPort" type="number" min="1" max="65535" value="1433" required></label><label>${t('sqlAdmin')}<input name="sqlAdmin" value="sa" required autocomplete="off"></label><label>${t('sqlPassword')}<input name="sqlPassword" type="password" required autocomplete="off"></label><label>${t('profile')}<select name="profile" id="profiles" required></select></label><label>${t('appEnv')}<select name="appEnv"><option value="local">local</option><option value="production">production</option></select></label><label>${t('gameDatabase')}<input name="gameDatabase" value="MuOnline" required></label><label>${t('webDatabase')}<input name="webDatabase" value="MuOnline_Web" required></label><label>${t('appLogin')}<input name="appLogin" value="muonline_web_app" required></label><label>${t('gameLogin')}<input name="gameLogin" value="muonline_web_user" required></label></div><p class="hint">${t('sqlSetup.automaticHint')}</p><p class="hint">${t('sqlSetup.temporary')}</p><div class="actions"><button type="button" id="detectSqlHost">${t('sqlSetup.detect')}</button><button type="button" id="useSqlHost" hidden>${t('sqlSetup.use')}</button></div><p class="hint" id="sqlEndpointHint"></p><p class="warning" id="savedSqlEndpoint" hidden></p><label class="check" id="sqlEndpointConfirmation" hidden><input name="confirmSqlEndpoint" type="checkbox">${t('sqlSetup.confirm')}</label><label class="check"><input name="trustCertificate" type="checkbox" checked>${t('trustCertificate')}</label><p class="hint">${t('passwordHint')}</p><fieldset><legend>${t('access')}</legend>${accessFields()}</fieldset><fieldset><legend>${t('firstAdmin')}</legend>${adminFields()}</fieldset><div class="actions"><button class="primary" type="submit">${t('install')}</button><button type="button" id="resumeInstall">${t('resumeInstall')}</button></div><p class="hint">${t('resumeHint')}</p><p id="installationDraftNotice" class="hint" aria-live="polite"></p></form><details class="panel install-helpers"><summary>${t('install.helpers')}</summary><p class="hint">${t('install.helpersHint')}</p><div class="actions"><button data-action="prerequisites">${t('prerequisites')}</button><button data-action="installWsl">${t('installWsl')}</button><button data-action="installDocker">${t('installDocker')}</button><button type="button" id="openSqlTroubleshooting">${t('sql.title')}</button></div> <div class="warning">${t('dockerWarning')}</div><p id="linuxAccess" class="hint"></p><button type="button" data-action="openLogs">${t('logs.open')}</button><button type="button" data-open-page="overview">${t('installation.maintenance')}</button></details>`,
     access: `<h1>${t('accessTitle')}</h1><p class="lead">${t('accessLead')}</p><form id="accessForm">${accessFields()}<div class="warning">${t('accessWarning')}</div><button class="primary" type="submit">${t('applyAccess')}</button></form>`,
     admins: administratorsPage(t, adminFields()),
@@ -206,6 +210,7 @@ function render() {
   document.querySelector('.console').hidden = page === 'support';
   populate(true);
   bind();
+  bindSiteSettings(document.querySelector('#siteSettingsForm'));
 }
 
 /** Explain version state without exposing repository paths or signature configuration. */
@@ -478,6 +483,10 @@ async function perform(action, input = {}, quiet = false) {
       sqlState.plan = null;
       sqlState.report = null;
     }
+    if (['siteSettings', 'saveSiteSettings'].includes(action)) {
+      receiveSiteSettings(result);
+      if (page === 'site') render();
+    }
     if (action === 'settings') {
       settings = result;
       changeLanguage(settings.language ?? language, false);
@@ -504,6 +513,7 @@ async function perform(action, input = {}, quiet = false) {
       populate();
     }
     if (action === 'uninstallRuntime') {
+      receiveSiteSettings(null);
       status = { installed: false };
       sqlState.installed = false;
       sqlState.lastInstalled = false;
@@ -554,13 +564,17 @@ async function perform(action, input = {}, quiet = false) {
       renderOutput();
     }
   } finally {
+    if (action === 'saveSiteSettings') {
+      const confirmation = document.querySelector('[name="siteConfirmed"]');
+      if (confirmation) confirmation.checked = false;
+    }
     if (action === 'setGameWrites') {
       const confirmation = document.querySelector('#gameWritesConfirm');
       if (confirmation) confirmation.checked = false;
     }
     if (progressTimer) clearInterval(progressTimer);
     if (trackSetup) await refreshSetupStatus().catch(() => {});
-    if (['uninstallRuntime', 'install', 'resumeInstall', 'admin', 'backup', 'update', 'sqlDiagnose', 'adminUpdate'].includes(action)) {
+    if (['saveSiteSettings', 'uninstallRuntime', 'install', 'resumeInstall', 'admin', 'backup', 'update', 'sqlDiagnose', 'adminUpdate'].includes(action)) {
       document.querySelectorAll('input[type="password"]').forEach(input => { input.value = ''; });
     }
     busy = false;
@@ -583,7 +597,7 @@ async function perform(action, input = {}, quiet = false) {
       if (installationVerified) { page = 'overview'; render(); window.scrollTo({ top: 0, behavior: 'instant' }); }
       await perform('updates', {}, true);
     }
-    if ((['access', 'start', 'stop', 'restart'].includes(action) && lastOutput.kind === 'result') || action === 'setGameWrites') {
+    if ((['access', 'start', 'stop', 'restart'].includes(action) && lastOutput.kind === 'result') || ['setGameWrites', 'saveSiteSettings'].includes(action)) {
       progress.verifying(progressToken);
       await perform('status', {}, true);
     }
@@ -709,6 +723,9 @@ function bind() {
     event.preventDefault();
     const data = new FormData(event.target);
     switch (event.target.id) {
+      case 'siteSettingsForm':
+        perform('saveSiteSettings', siteSettingsInput(event.target));
+        break;
       case 'sqlForm':
         perform('sqlDiagnose', sqlInput());
         break;
@@ -752,6 +769,7 @@ function selectPage(nextPage) {
   page = nextPage;
   render();
   window.scrollTo({ top: 0, behavior: 'instant' });
+  if (page === 'site') perform('siteSettings');
   if (page === 'admins') {
     perform('adminList');
   }
