@@ -3,6 +3,7 @@
   "version": "0.2.0",
   "description": "Windows WSL2 control panel for MuOnline Web",
   "author": "InterWeb",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "main": "src/main/main.js",

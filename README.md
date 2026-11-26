@@ -95,5 +95,9 @@ Production release signing requires an operator-owned Ed25519 key, its public ke
 pinned in `build/trust.json`, and actual published artifacts. An empty trust store
 blocks deployment; keep the pinned public key matched to the release signing key. No R2 objects are assumed to exist or uploaded by CI.
 
+## License
+
+[MIT License](LICENSE). Copyright © 2026 InterWeb Ltd.
+
 Support development: [Buy Me a Coffee](https://buymeacoffee.com/interweb.bg) ·
 [Ko-fi](https://ko-fi.com/interwebltd) · [PayPal](https://paypal.me/interwebltd).
