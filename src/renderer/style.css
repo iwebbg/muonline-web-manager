@@ -49,3 +49,8 @@ nav button[hidden],#installationEstimate[hidden]{display:none}
 #installationEstimate{margin:22px 0 8px;white-space:pre-line}#progressElapsed{margin-top:8px;font-variant-numeric:tabular-nums}
 
 #sqlManualFields[hidden],#sqlInstalledHint[hidden],#sqlManualHint[hidden]{display:none}
+
+.site-settings-group { margin-bottom: 18px; }
+.site-settings-group summary { cursor: pointer; font-weight: 600; }
+.site-settings-group .grid { align-items: start; }
+.site-settings-group label small { color: var(--muted, #91a5ba); }

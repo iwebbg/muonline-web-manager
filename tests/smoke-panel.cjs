@@ -30,6 +30,7 @@ let rebootCheckpoint = false;
 let installationDraft = {};
 let savedBootstrapEndpoint = { host: '127.0.0.1', port: 1433, gameHost: '127.0.0.1', gamePort: 1433 };
 let refuseUninstall = true;
+let siteFixture;
 const timer = setTimeout(() => { console.error('Electron smoke test timed out.'); app.exit(1); }, 60000);
 
 /** Wait until initial settings, feed and status calls finish. */
@@ -51,6 +52,9 @@ async function selectLanguage(locale) {
 
 /** Exercise actual renderer navigation and forms through the sandboxed preload bridge. */
 async function smoke() {
+  const workerSource = await fs.readFile('runtime/worker.py', 'utf8');
+  const siteFields = JSON.parse(workerSource.match(/SITE_FIELDS = json.loads\(r'''([\s\S]*?)'''\)/)[1]).map(field => ({...field,supported:field.key !== 'REVOLUT_TAG'}));
+  siteFixture = { webhooks:{stripe:'https://mu.example.test/payments/webhooks/stripe'}, revision:'fixture-revision', fields:siteFields, values:Object.fromEntries(siteFields.filter(field=>field.type!=='secret').map(field=>[field.key,field.default])), configured:{MAIL_PASSWORD:true}, s3DriverInstalled:false };
   const { publicInstallationSettings } = await import('../src/shared/installation-settings.js');
   ipcMain.handle('manager:invoke', (event, action, input) => {
     operations.push({ action, input });
@@ -106,6 +110,13 @@ async function smoke() {
       language = input.language;
     }
     if (action === 'uninstallRuntime') { assert.equal(input.distributionConfirmation, 'MuOnline-Dev'); assert.equal(input.confirmed, true); assert.equal(input.sqlRemoval.confirmed, true); assert.equal(input.sqlRemoval.target.database, 'MuOnline_Web'); assert.equal(input.sqlRemoval.admin_password, 'Private-Password/42!'); if (refuseUninstall) return { ok: false, error: 'SQL cleanup incomplete: code=sql_operation_failed; database=removed; login=retained' }; runtimeInstalled=false; installationDraft={}; }
+    if (action === 'saveSiteSettings') {
+      assert.equal(input.siteSettings.confirmed,true);
+      for(const [key,value] of Object.entries(input.siteSettings.changes)) {
+        if(typeof value === 'string') siteFixture.values[key]=value;
+        else siteFixture.configured[key]=value.operation === 'replace';
+      }
+    }
     if (action === 'setGameWrites') {
       assert.equal(input.gameWrites.confirmed, true);
       runtimeWrites = input.gameWrites.enabled ? 'enabled' : 'disabled';
@@ -124,6 +135,8 @@ async function smoke() {
       return {ok:true,result:{administrator:{...row}}};
     }
     const results = {
+      siteSettings: siteFixture,
+      saveSiteSettings: siteFixture,
       uninstallRuntime: { removed: true, distribution: 'MuOnline-Dev' },
       logs: { logsOpened: true },
       openLogs: { logsOpened: true },
@@ -156,7 +169,7 @@ async function smoke() {
   await fs.mkdir('artifacts/review', { recursive: true });
   for (const locale of ['en', 'bg']) {
     await selectLanguage(locale);
-    for (const page of ['overview', 'install', 'access', 'admins', 'sql', 'backup', 'updates', 'support']) {
+    for (const page of ['overview', 'install', 'access', 'site', 'admins', 'sql', 'backup', 'updates', 'support']) {
       await window.webContents.executeJavaScript(`document.querySelector('[data-page="${page}"]').click()`);
       await window.webContents.executeJavaScript(`new Promise(resolve=>{const timer=setInterval(()=>{if(!document.querySelector('#language').disabled){clearInterval(timer);resolve();}},10);})`);
       const state = await window.webContents.executeJavaScript(`({ links: [...document.querySelectorAll('footer a')].map(a => a.href), bottom: document.querySelector('footer').getBoundingClientRect().bottom, height: innerHeight, heading: document.querySelector('h1').textContent, body: document.querySelector('#content').innerText, lang: document.documentElement.lang })`);
@@ -352,6 +365,46 @@ async function smoke() {
   assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#accessForm [name="host"]').value`),'unsent.example.test');
   await selectLanguage('en');
   await window.webContents.executeJavaScript(`document.querySelector('[data-page="overview"]').click()`);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-page="site"]').click()`);
+  await idle();
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="MAIL_PASSWORD"]').value`), '');
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="REVOLUT_TAG"]').disabled`), true);
+  await window.webContents.executeJavaScript(`(() => {
+    const select=document.querySelector('[name="secretOperation_MAIL_PASSWORD"]'); select.value='replace'; select.dispatchEvent(new Event('change'));
+    document.querySelector('[name="MAIL_PASSWORD"]').value='Memory-only-language-switch';
+  })()`);
+  await selectLanguage('bg'); await selectLanguage('en');
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="MAIL_PASSWORD"]').disabled`), false);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="MAIL_PASSWORD"]').value`),'Memory-only-language-switch');
+  heldAction = 'saveSiteSettings'; heldError = 'Website settings failed; previous configuration restored. Backup: /private/backup'; releaseHeld = null;
+  await window.webContents.executeJavaScript(`(() => {
+    const form=document.querySelector('#siteSettingsForm');
+    form.querySelector('[name="APP_NAME"]').value='New website name';
+    const select=form.querySelector('[name="secretOperation_MAIL_PASSWORD"]'); select.value='replace'; select.dispatchEvent(new Event('change'));
+    form.querySelector('[name="MAIL_PASSWORD"]').value='Never-display-this-secret';
+    form.querySelector('[name="siteConfirmed"]').checked=true;
+    form.requestSubmit();
+  })()`);
+  await window.webContents.executeJavaScript(`new Promise(resolve=>{const timer=setInterval(()=>{if(document.querySelector('#operationProgress').open){clearInterval(timer);resolve();}},10);})`);
+  assert.match(await window.webContents.executeJavaScript(`document.querySelector('#progressTitle').textContent`), /Applying website settings/);
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelectorAll('footer a').length`),3);
+  heldAction = null; releaseHeld(); await idle(); heldError = null;
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="MAIL_PASSWORD"]').value`),'');
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="siteConfirmed"]').checked`),false);
+  assert.doesNotMatch(await window.webContents.executeJavaScript(`document.querySelector('#output').textContent`),/Never-display-this-secret/);
+  await window.webContents.executeJavaScript(`(() => {
+    const form=document.querySelector('#siteSettingsForm');
+    form.querySelector('[name="secretOperation_MAIL_PASSWORD"]').value='keep';
+    form.querySelector('[name="secretOperation_MAIL_PASSWORD"]').dispatchEvent(new Event('change'));
+    form.querySelector('[name="siteConfirmed"]').checked=true;
+    form.requestSubmit();
+  })()`);
+  await idle();
+  const savedSite=operations.filter(op=>op.action==='saveSiteSettings').at(-1).input.siteSettings;
+  assert.deepEqual(savedSite.changes,{APP_NAME:'New website name'});
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="APP_NAME"]').value`),'New website name');
+  assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[name="MAIL_PASSWORD"]').value`),'');
+  await window.webContents.executeJavaScript(`document.querySelector('[data-page="overview"]').click()`);
   for (const action of ['stop','start','restart']) {
     const beforeStatus=operations.filter(op=>op.action==='status').length;
     await window.webContents.executeJavaScript(`document.querySelector('[data-action="${action}"]').click()`);
@@ -541,7 +594,7 @@ async function smoke() {
     assert.equal(await window.webContents.executeJavaScript(`document.querySelector('[data-page="install"]').hidden`), true);
     assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installForm')`), null);
     assert.equal(await window.webContents.executeJavaScript(`Boolean(document.querySelector('#uninstallForm'))`), true);
-    assert.equal(await window.webContents.executeJavaScript(`document.querySelectorAll('nav [data-page]:not([hidden])').length`), 7);
+    assert.equal(await window.webContents.executeJavaScript(`document.querySelectorAll('nav [data-page]:not([hidden])').length`), 8);
     await fs.writeFile(`artifacts/review/installation-complete-${locale}.png`, (await window.webContents.capturePage()).toPNG());
     await window.webContents.executeJavaScript(`document.querySelector('#outcomeContinue').click()`);
     const readyLoad = new Promise(resolve => window.webContents.once('did-finish-load', resolve));
@@ -552,6 +605,6 @@ async function smoke() {
     assert.equal(await window.webContents.executeJavaScript(`document.querySelector('#installationOutcome').open`), false, 'Completed-install notification does not repeat on startup');
   }
   onboardingMode = null;
-  console.log('PASS: all eight pages in EN/BG, support/company links, branding and compact navigation, SQL diagnostic evidence and explicit change confirmation, persistent language, preserved unsent fields, permanent donate footer, sandbox bridge, administrator form, password cleanup, delayed modal progress, live setup stages, final status refresh, error focus/scroll and check-only updates; first-run navigation, reboot/success dialogs and verified Control Panel routing in EN/BG. Screenshots: artifacts/review/.');
+  console.log('PASS: all nine pages in EN/BG, support/company links, branding and compact navigation, SQL diagnostic evidence and explicit change confirmation, persistent language, preserved unsent fields, permanent donate footer, sandbox bridge, administrator form, password cleanup, delayed modal progress, live setup stages, final status refresh, error focus/scroll and check-only updates; first-run navigation, reboot/success dialogs and verified Control Panel routing in EN/BG. Screenshots: artifacts/review/.');
 }
 app.whenReady().then(smoke).then(() => { clearTimeout(timer); app.exit(0); }).catch(error => { clearTimeout(timer); console.error(error); app.exit(1); });

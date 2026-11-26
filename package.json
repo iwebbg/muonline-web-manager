@@ -1,6 +1,6 @@
 {
   "name": "muonline-web-manager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Windows WSL2 control panel for MuOnline Web",
   "author": "InterWeb",
   "private": true,

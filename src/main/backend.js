@@ -535,7 +535,7 @@ exit 0
     }
     this.busy = true;
     this.logUnavailable = false;
-    const loggedActions = new Set(['install', 'resumeInstall', 'installWsl', 'installDocker', 'setGameWrites', 'uninstallRuntime', 'start', 'stop', 'restart', 'access', 'backup', 'update', 'admin', 'adminUpdate', 'adminDelete', 'sqlDiagnose', 'sqlApply']);
+    const loggedActions = new Set(['saveSiteSettings', 'install', 'resumeInstall', 'installWsl', 'installDocker', 'setGameWrites', 'uninstallRuntime', 'start', 'stop', 'restart', 'access', 'backup', 'update', 'admin', 'adminUpdate', 'adminDelete', 'sqlDiagnose', 'sqlApply']);
     if (loggedActions.has(action)) {
       try { this.activeLog = await this.supportLogs.begin(action, input); } catch { this.activeLog = null; this.logUnavailable = true; }
     }
@@ -552,6 +552,12 @@ exit 0
           catch (error) { await this.activeLog.append('Could not collect the current WSL snapshot: ' + error.message); }
           return { logsDirectory: this.supportLogs.directory };
         }
+        case 'siteSettings':
+          return await this.runtime({ action: 'siteSettings' });
+        case 'saveSiteSettings':
+          if (input.siteSettings?.confirmed !== true) throw new Error('Confirm applying the website settings.');
+          await this.ensureKeepalive();
+          return await this.runtime({ action: 'saveSiteSettings', siteSettings: input.siteSettings });
         case 'setGameWrites':
           if (typeof input.gameWrites?.enabled !== 'boolean' || input.gameWrites?.confirmed !== true || !['enabled', 'disabled', 'unknown'].includes(input.gameWrites?.expectedMode)) {
             throw new Error('Confirm the game write change and project restart.');

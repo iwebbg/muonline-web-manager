@@ -22,6 +22,7 @@ source checkout to use the installed manager.
 - Configures the web database and restricted SQL logins against your SQL Server.
 - Supports Local, IP and Domain + SSL access, with changes available after installation.
 - Opens your website and admin panel directly from the Control panel.
+- Configures payments, SMTP, S3 credentials, reCAPTCHA and website options after installation.
 - Provides service controls, logs, SQL diagnostics and web administrator management.
 - Creates verified SQL backups before web updates and checks for new versions automatically.
 - Applies updates only when you choose Update.
@@ -80,6 +81,7 @@ On Windows, `npm run dist:win` builds the assisted NSIS installer. The
 [Windows CI workflow](.github/workflows/windows.yml) builds and retains review
 artifacts without publishing. It can run after the branch is pushed by an operator.
 
+- [Website settings (manager 0.2.0)](docs/website-settings.md)
 - [Architecture and security boundaries](docs/architecture.md)
 - [Build, sign and distribute releases](docs/releases.md)
 - [Web administrator and Game Master management](docs/administrators.md)
